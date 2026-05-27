@@ -231,6 +231,11 @@ def save_images(img, out_dir, prefix, sg, tilt, line_hkl, det_names):
 			cpu.gaussian_filter(k, boundary='constant').to_tiff(
 				str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}_{str(k).replace('.','-')}.tif"))
 
+def save_config(cfg, path):
+	path = Path(path)
+	with path.open("wb") as f:  # binary mode for tomli_w
+		tomli_w.dump(cfg, f)
+
 def make_potential(target):
 	"""abtem.Potential with our standard params; returns lazy (caller chooses to build/compute)."""
 	return abtem.Potential(
@@ -384,8 +389,7 @@ def simulation_run(s,cfg,
 		run_cfg = deepcopy(ctx.cfg.model_dump())
 		run_cfg["lamella_settings"]["global_tilt_a"] = float(ctx.global_tilt[0])
 		run_cfg["lamella_settings"]["global_tilt_b"] = float(ctx.global_tilt[1])
-		with cfg_out_path.open("wb") as f:  # binary mode for tomli_w
-			tomli_w.dump(run_cfg, f)
+		save_config(run_cfg, cfg_out_path)
 
 		sim.plot_dataset(entry,ctx,is_uvw)
 		
