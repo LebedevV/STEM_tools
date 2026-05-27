@@ -25,6 +25,17 @@ Known issues and TODO:
  - for the in-plane rotation to add 'this hkl up' functionality
  - check imported libraries
 
+Install (development):
+
+	pip install -e .
+
+then run from a directory containing config.toml:
+
+	abtem-run
+
+For GPU runs you also need cupy, dask-cuda, and rmm matched to your CUDA toolkit.
+
 Acknowledgements:
  - Julie M. Bekkevold for the invalueable help with ab-initio simulations and guidance with abTEM code
  - Project SFI/21/US/3785 for financial support
+ - Iterative cleanup and packaging work carried out by Ivan S. Titov

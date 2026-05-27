@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+out_full/
+*.tif
+*.zarr
+*.zarr/
+*.xyz
+*.cif
+venv/
+.ruff_cache/
