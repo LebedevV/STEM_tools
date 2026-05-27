@@ -174,6 +174,7 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 	abtem.config.set({"dask.chunk-size" : cfg.gpu_related.dask_chunk_size})
 
 	dask_client = None
+	# !TODO - separate dask.distributed and dask_cuda
 	if use_gpu and cfg.gpu_related.dask_cuda:
 		from dask.distributed import Client
 		dask_client = Client("tcp://127.0.0.1:8786")
@@ -225,6 +226,7 @@ def save_images(img, out_dir, prefix, sg, tilt, line_hkl, det_names):
 	for w, iimg in enumerate(img):
 		det_s = det_names[w]
 		cpu = iimg.copy().to_cpu()
+		# Q: do we need .mean(axis=0) here?
 		cpu.to_tiff(str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}.tif"))
 		cpu.to_zarr(str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}.zarr"), overwrite=True)
 		for k in BLUR_SIGMAS:
@@ -424,6 +426,7 @@ def simulation_run(s,cfg,
 
 			#frozen phonon set
 			fph_potential = entry['fph_potential']
+			# !TODO - validate the approach on the probe.grid.match here
 			probe.grid.match(potential)
 			fph_measurements = probe.scan(fph_potential, scan=scan, detectors=[ctx.haadf_detector,ctx.abf_detector])
 			img = fph_measurements.compute()

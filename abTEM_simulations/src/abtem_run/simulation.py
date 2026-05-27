@@ -237,6 +237,7 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 		uvw = hkl
 	else:
 		uvw = hkl_to_uvw(param_list,hkl,max_uvw,around=False)
+	# !TODO validation of directions: how [uvw] here relates to the abTEM beam settings
 	rot = get_euler_uvw(param_list,uvw)
 	rot_matrix = rot.as_matrix()
 	
@@ -297,6 +298,7 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 
 				selected = np.atleast_2d(proj_XY[dist<min_r_dist*1.025])
 				print('selected',selected)
+				# Q: ensure we select the nearest one among them
 				if len(selected) > 1:
 					upper_half = [i for i in selected if i[1] > 0]
 					if upper_half:
