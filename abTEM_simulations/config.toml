@@ -35,6 +35,11 @@ fph_sigma = 0.1#0.25#0.1 #A;
 override_sampling = false
 do_full_run = true
 
+#dry_run = true: plan + planning artifacts only, no multislice
+dry_run = false
+#test_enabled = true: keep per-seed outputs/ and dump displaced .xyz per seed
+test_enabled = false
+
 [lamella_settings]
 #Max int to search for uvw
 #needed for hkl to uvw conversion
@@ -101,6 +106,8 @@ inplane_angle = 0          # degrees before crop, or 'auto' (detect from atom_to
 [microscope]#Nion, TCD, 200kV
 HT_value = 200000 #V
 do_diffraction = true
+do_cbed = true             # convergent-beam diffraction; gated independently of do_diffraction
+#detectors = ['haadf', 'abf', 'bf']   # subset to compute in probe.scan; default all three
 
 convergence_angle = 30.0   # mrad
 cbed_max_angle = 'valid'
