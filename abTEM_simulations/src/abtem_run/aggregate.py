@@ -18,7 +18,10 @@ Diff and CBED channels also get a matplotlib PNG preview alongside the
 ``plot_diffraction`` / ``plot_cbed`` output so the worker pipeline is the
 single producer of those previews.
 
-Cleans up ``outputs/`` unless ``simulations.test_enabled`` is true.
+Reads per-seed files from ``outputs/`` ∪ ``outputs_archive/`` so a follow-up
+``abtem-run-extend`` batch landing in a fresh ``outputs/`` accumulates into
+the next mean. On completion, moves ``outputs/`` contents into
+``outputs_archive/`` (skipped if ``simulations.test_enabled`` is true).
 
 CLI:
     abtem-run-aggregate <job_dir>
@@ -45,9 +48,54 @@ from .simulation import add_probe, build_lamella_from_config
 # --------------------------------------------------------------------------- #
 
 
-def _mean_zarr_channel(out_dir: Path, channel_name: str):
-	"""Cross-seed mean of ``seed_*_<channel_name>.zarr``; None if none exist."""
-	zarr_files = sorted(out_dir.glob(f"seed_*_{channel_name}.zarr"))
+def _collect_seed_zarrs(out_dir: Path, archive_dir: Path, channel_name: str) -> list[Path]:
+	"""All ``seed_*_<channel>.zarr`` from outputs/ AND outputs_archive/,
+	sorted by seed integer for deterministic ordering.
+
+	Cumulative-aggregation entry point. After the first aggregator pass,
+	per-seed files live in outputs_archive/; a subsequent abtem-run-extend
+	batch lands fresh in outputs/. Both contribute to the mean. Duplicate
+	seeds shouldn't happen (extend refuses an already-present seed); if one
+	does, the outputs/ copy wins.
+	"""
+	def _seed_key(p: Path) -> int:
+		return int(p.stem.split("_")[1])  # seed_NNNNNN_<channel> -> NNNNNN
+
+	collected: dict[int, Path] = {}
+	# archive first so a current-batch outputs/ entry wins on collision
+	if archive_dir.exists():
+		for p in archive_dir.glob(f"seed_*_{channel_name}.zarr"):
+			collected[_seed_key(p)] = p
+	if out_dir.exists():
+		for p in out_dir.glob(f"seed_*_{channel_name}.zarr"):
+			collected[_seed_key(p)] = p
+	return [collected[k] for k in sorted(collected)]
+
+
+def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
+	"""Move everything in outputs/ into outputs_archive/ and remove outputs/.
+	Idempotent on a missing/empty outputs/. Lets a future abtem-run-extend
+	batch land in a fresh outputs/ while historical seeds stay queryable for
+	the next cumulative mean.
+	"""
+	if not out_dir.exists():
+		return
+	archive_dir.mkdir(parents=True, exist_ok=True)
+	for child in out_dir.iterdir():
+		dest = archive_dir / child.name
+		if dest.exists():
+			if dest.is_dir():
+				shutil.rmtree(dest)
+			else:
+				dest.unlink()
+		shutil.move(str(child), str(dest))
+	out_dir.rmdir()
+
+
+def _mean_zarr_channel(out_dir: Path, archive_dir: Path, channel_name: str):
+	"""Cross-seed mean of ``seed_*_<channel_name>.zarr`` over outputs/ ∪
+	outputs_archive/; None if none exist."""
+	zarr_files = _collect_seed_zarrs(out_dir, archive_dir, channel_name)
 	if not zarr_files:
 		return None
 
@@ -58,13 +106,13 @@ def _mean_zarr_channel(out_dir: Path, channel_name: str):
 	return mean.compute() if hasattr(mean, "compute") else mean
 
 
-def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *,
+def _emit_channel(out_dir: Path, archive_dir: Path, agg_dir: Path, channel_name: str, *,
 		with_blurs: bool, blur_boundary: str = "nearest"):
 	"""Aggregate one channel; write {channel}.{tif,zarr} (+ blurred TIFFs if
 	requested) and return the cross-seed mean (or None if no seeds produced
 	this channel — used for "no data, skip"; an abtem read/stack/mean error
 	would raise, not return None)."""
-	mean = _mean_zarr_channel(out_dir, channel_name)
+	mean = _mean_zarr_channel(out_dir, archive_dir, channel_name)
 	if mean is None:
 		return None
 
@@ -142,25 +190,33 @@ def aggregate_job(job_dir) -> None:
 		1. Verify no ``seeds/*.todo`` remain (job must be complete).
 		2. Load the job's TOML, build a RunContext.
 		3. For each scan detector in ``ctx.detectors``: mean per-seed
-		   ``outputs/seed_*_<det>.zarr`` into ``aggregate/<det>.{tif,zarr}``,
-		   plus three gaussian-blurred TIFF variants.
+		   ``seed_*_<det>.zarr`` from outputs/ ∪ outputs_archive/ into
+		   ``aggregate/<det>.{tif,zarr}`` + gaussian-blurred TIFF variants.
 		4. If ``do_diffraction``: same for ``diff``, plus a ``diff.png`` preview.
 		5. If ``do_cbed``: same for ``cbed``, plus a ``cbed.png`` preview.
 		6. Mean ``seed_*_potproj.zarr`` into the phonon-averaged projection
 		   preview; if ``emit_static_baseline``, also a separate static
 		   projection preview from the same ground-state potential.
-		7. Delete ``outputs/`` unless ``simulations.test_enabled``.
+		7. Move outputs/ contents into outputs_archive/ unless
+		   ``simulations.test_enabled``, so future abtem-run-extend batches
+		   land in a fresh outputs/ and accumulate into the next mean.
 
 	Raises:
-		FileNotFoundError: no ``outputs/`` directory or no ``*.toml`` in job_dir.
+		FileNotFoundError: neither ``outputs/`` nor ``outputs_archive/`` exists,
+		    or no ``*.toml`` in job_dir.
 		RuntimeError: ``seeds/`` still has ``.todo`` files (workers not done).
 	"""
 	job_dir = Path(job_dir).resolve()
 	out_dir = job_dir / "outputs"
+	archive_dir = job_dir / "outputs_archive"
 	agg_dir = job_dir / "aggregate"
 
-	if not out_dir.exists():
-		raise FileNotFoundError(f"No outputs/ directory in {job_dir}")
+	# A pure re-aggregate against just the archive is legal (no fresh workers
+	# ran since last time), so either dir suffices.
+	if not out_dir.exists() and not archive_dir.exists():
+		raise FileNotFoundError(
+			f"No outputs/ or outputs_archive/ directory in {job_dir}"
+		)
 
 	seeds_dir = job_dir / "seeds"
 	if seeds_dir.exists():
@@ -188,23 +244,24 @@ def aggregate_job(job_dir) -> None:
 	# 1. Scan channels (with blurs)
 	if ctx.do_full_run:
 		for det_name in ctx.detectors:
-			_emit_channel(out_dir, agg_dir, det_name, with_blurs=True, blur_boundary=ctx.blur_boundary)
+			_emit_channel(out_dir, archive_dir, agg_dir, det_name, with_blurs=True,
+				blur_boundary=ctx.blur_boundary)
 
 	# 2. Plane-wave diffraction
 	if ctx.do_diffraction:
-		diff_mean = _emit_channel(out_dir, agg_dir, "diff", with_blurs=False)
+		diff_mean = _emit_channel(out_dir, archive_dir, agg_dir, "diff", with_blurs=False)
 		if diff_mean is not None:
 			_write_pattern_preview(diff_mean, cfg, agg_dir, "diff", "diffraction", figsize=(10, 6))
 
 	# 3. CBED
 	if ctx.do_cbed:
-		cbed_mean = _emit_channel(out_dir, agg_dir, "cbed", with_blurs=False)
+		cbed_mean = _emit_channel(out_dir, archive_dir, agg_dir, "cbed", with_blurs=False)
 		if cbed_mean is not None:
 			_write_pattern_preview(cbed_mean, cfg, agg_dir, "cbed", "CBED", figsize=(8, 6))
 
 	# 4. Projection preview(s). Build the ground-state potential once for
 	#    the probe-shape side panel and reuse for the optional static one.
-	mean_proj = _mean_zarr_channel(out_dir, "potproj")
+	mean_proj = _mean_zarr_channel(out_dir, archive_dir, "potproj")
 	if mean_proj is not None or cfg.simulations.emit_static_baseline:
 		static_potential = make_potential(
 			build_lamella_from_config(cfg, cfg.job.hkl_list[0])
@@ -220,18 +277,19 @@ def aggregate_job(job_dir) -> None:
 			_write_projection(static_proj, probe, cfg, agg_dir,
 				"potential_projection_static", "static lattice projection")
 
-	# 5. Cleanup unless test mode is on
+	# 5. Archive the per-seed outputs so future extends can build on them
+	#    (test_enabled keeps outputs/ in place for diagnostics).
 	if not ctx.test_enabled:
-		shutil.rmtree(out_dir)
+		_archive_per_seed_outputs(out_dir, archive_dir)
 
 
 def main():
 	"""``abtem-run-aggregate`` console-script entry."""
 	parser = argparse.ArgumentParser(
 		description=(
-			"abtem-run aggregator: mean per-seed outputs/ into aggregate/, "
-			"emit a static-lattice potential projection preview, and clean up "
-			"outputs/ unless simulations.test_enabled is true."
+			"abtem-run aggregator: mean per-seed outputs/ ∪ outputs_archive/ "
+			"into aggregate/, emit potential / diff / cbed PNG previews, and "
+			"archive outputs/ -> outputs_archive/ unless simulations.test_enabled."
 		),
 	)
 	parser.add_argument("job_dir", help="job directory (gen_*/<phase>_<hkl>_<tilt>/)")

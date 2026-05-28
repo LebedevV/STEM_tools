@@ -203,6 +203,7 @@ from .generator_run import generate_run
 from .worker import run_one_seed
 from .aggregate import aggregate_job
 from .to_ensemble import load_ensemble, to_ensemble_files
+from .extend import extend_job
 from .cli import main, run_pipeline
 
 __all__ = [
@@ -228,6 +229,7 @@ __all__ = [
 	# abTEM cross-compat bridge (per-seed zarrs -> ensemble Measurement)
 	"load_ensemble",
 	"to_ensemble_files",
+	"extend_job",
 	# convenience wrapper
 	"main",
 	"run_pipeline",

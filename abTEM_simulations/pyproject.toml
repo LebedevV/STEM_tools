@@ -46,6 +46,7 @@ abtem-run = "abtem_run.cli:main"
 abtem-run-worker = "abtem_run.worker:main"
 abtem-run-aggregate = "abtem_run.aggregate:main"
 abtem-run-to-ensemble = "abtem_run.to_ensemble:main"
+abtem-run-extend = "abtem_run.extend:main"
 
 [project.optional-dependencies]
 # GPU deps are install-environment-specific (CUDA toolkit version, etc.) and
