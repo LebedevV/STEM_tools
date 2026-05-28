@@ -115,9 +115,22 @@ class AppConfig(BaseModel):
 	simulations: Simulations
 	job: Job
 
+# Resolve a [paths] field: absolute paths pass through, relative ones resolve
+# against `base` (the config file's dir). Trailing '/' keeps folder+phase /
+# folder_sim+extr concatenation working.
+_resolve_path_field = lambda value, base: str((Path(value) if Path(value).is_absolute() else base / value).resolve()) + "/"  # noqa: E731
+
 def load_config(path: str | Path = 'config.toml') -> AppConfig:
-	# Path is interpreted verbatim — pass an absolute path or one relative to CWD.
+	# The config-file path itself is verbatim (absolute or relative to CWD).
+	# paths.folder / paths.folder_sim *inside* the config are then resolved
+	# relative to the config file's directory if not absolute, so a config
+	# can travel with its CIFs and output dir regardless of CWD.
 	full_path = Path(path).resolve()
+	config_dir = full_path.parent
 	with full_path.open("rb") as f:
 		data = tomllib.load(f)
+	if "paths" in data:
+		for key in ("folder", "folder_sim"):
+			if key in data["paths"]:
+				data["paths"][key] = _resolve_path_field(data["paths"][key], config_dir)
 	return AppConfig.model_validate(data)

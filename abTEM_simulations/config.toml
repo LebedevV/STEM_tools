@@ -1,14 +1,16 @@
 [paths]
+# folder and folder_sim: absolute paths are used verbatim; relative paths
+# (e.g. './' or 'out_full/') resolve against THIS config file's directory,
+# so the config can travel with its CIFs and output tree regardless of CWD.
+
 #General output path
-folder_sim = '/home/<user>/<folder>/'
-#folder_sim = 'C://Users//<user>//<folder>//'
+folder_sim = './out_full/'
 
 #Specific subfolder - please, make sure that path exists!
 extr='./'
 
-#Path to cif files
-folder = '/home/<user>/<folder>/'
-#folder = 'C://Users//<user>//<folder>//'
+#Path to cif files (the [job].phase filename is appended to this)
+folder = './'
 
 #Sample name
 sample_name = 'PZO'
