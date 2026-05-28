@@ -85,8 +85,7 @@ produces **two** result sets per `(phase, hkl, tilt)`:
 1. **Static lattice** — built from `add_potential(surf)` with no phonon
    displacements. Detectors: HAADF + ABF + BF.
 2. **Frozen-phonon stack** — built from
-   `add_frozen_phonons_potential(ctx, surf)`. Detectors: HAADF + ABF
-   (BF intentionally excluded).
+   `add_frozen_phonons_potential(ctx, surf)`. Detectors: HAADF + ABF.
 
 These are scientifically distinct quantities:
 
@@ -143,59 +142,12 @@ away unless the user explicitly configures σ=0.
 The worker treats all seeds uniformly. To reproduce today's dual
 output, the user writes two configs (or sweeps on `fph_sigma`).
 
-#### How the BF-asymmetry is reconstructed
+#### Detectors are a single configurable list
 
-Add a per-config detector list to `[microscope]`:
-
-```toml
-[microscope]
-# Which detectors to compute. Defaults to all three. Worker only runs
-# probe.scan() with the listed detectors.
-detectors = ["haadf", "abf", "bf"]   # static-lattice run
-# or
-detectors = ["haadf", "abf"]          # phonon-averaged run
-```
-
-The "fph skips BF" behavior becomes one line in the TOML, per sweep.
-Two configs reproduce today's output structure exactly:
-
-```toml
-# static.toml
-[simulations]
-fph_sigma = false
-frozen_phonons = 1
-[microscope]
-detectors = ["haadf", "abf", "bf"]
-```
-
-```toml
-# fph.toml
-[simulations]
-fph_sigma = 0.1
-frozen_phonons = 8
-[microscope]
-detectors = ["haadf", "abf"]
-```
-
-Two invocations of `abtem-run` give identical filenames + content to
-the current single-call dual output.
-
-#### Why this is an improvement, not a regression
-
-1. **The asymmetry becomes auditable.** Today it's hidden in
-   `simulation_run`; now it's stated in the TOML next to the detector
-   geometry.
-2. **The asymmetry becomes overridable.** Want BF in a phonon-averaged
-   run? Change one line in the config. No code edit needed.
-3. **The asymmetry becomes per-config.** Different jobs can use
-   different detector sets without forking the codebase.
-
-#### Caveat — verify
-
-`abtem.probe.scan(detectors=[...])` is assumed to accept any subset of
-{HAADF, ABF, BF}. The API takes a list of `AnnularDetector` objects, so
-any count should work — but a 1-line smoke test before promising the
-feature is wise.
+`[microscope].detectors` (default `["haadf", "abf", "bf"]`) is the one set of
+detectors the worker computes, applied uniformly to every seed. No
+static-vs-phonon detector asymmetry is baked into the code; set the list once
+in the TOML.
 
 ### 4. Diffraction and CBED are per-seed, gated independently
 
