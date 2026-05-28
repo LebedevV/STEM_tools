@@ -1,14 +1,14 @@
 [paths]
 #General output path
-folder_sim = '/home/vasily/test_abTEM/'
-#folder_sim = 'C://Users//lebedevv//Desktop//sym//'
+folder_sim = '/home/<user>/<folder>/'
+#folder_sim = 'C://Users//<user>//<folder>//'
 
 #Specific subfolder - please, make sure that path exists!
-extr='test_v5/'
+extr='./'
 
 #Path to cif files
-folder = '/home/vasily/test_abTEM/'
-#folder = 'C://Users//lebedevv//Desktop//cifs//'
+folder = '/home/<user>/<folder>/'
+#folder = 'C://Users//<user>//<folder>//'
 
 #Sample name
 sample_name = 'PZO'
@@ -26,12 +26,12 @@ frozen_phonons = 8
 #frozen_phonons = 'None'
 
 #fph_sigma = False #any boolean converts to None, i.e. default
-fph_sigma = 0.1 #A;
+fph_sigma = 0.1#0.25#0.1 #A;
 
 #override XY sampling (scan); default - Nyquist*0.9
 #override_sampling = .5
 override_sampling = false
-do_full_run = false
+do_full_run = true
 
 [lamella_settings]
 #Max int to search for uvw
@@ -48,14 +48,17 @@ sblock_size = 500 #A
 
 #Scan size
 #scan_s = 10 #A
-scan_s = 50 #A
+
+#scan_s = 50 #A
+scan_s =50 #A
 
 #Extra gaps, framing the sacn in XY directions
 #borders = 5 #A
-borders = 10 #A
+borders = 5 #A
 
 #Thickness of the virtual lamella
 #thickness = 10 #A
+#thickness = 50 #A
 thickness = 50 #A
 
 extra_shift_z = 0#-10 #A
@@ -67,13 +70,16 @@ tol = 0.3 #tolerance
 ##############
 #Which atom we would like to shift to (0,0,0) after rotation
 #atom_to_zero = 'Ti'
-atom_to_zero = 'Zr'
+#atom_to_zero = 'Zr'
+atom_to_zero = 'Ta'
 #atom_to_zero = 'Pb'
 ##############
 
 #Tilt - to tilt the lamella, not the beam
-global_tilt_a = [0,0.1,0.25,0.5,1,2,5] #around x
-global_tilt_b = [0,0.1,0.25,0.5,1,2,5] #around y
+#global_tilt_a = [0,0.1,0.25,0.5,1,2,5] #around x
+global_tilt_a = [0]#[5,10,15,25]#30#[10,15,25,30]#[0.5,1,2,5]#[0,0.1,0.25] #around x
+global_tilt_b = [0]#0#[10,15,25,30]#[0,0.1,0.25,0.5,1,2,5] #around y
+#global_tilt_b = 0 #around y
 tilt_degrees = false #true - degrees, false - mrad
 
 #Only if we need vacances; experimental
@@ -86,6 +92,7 @@ phase = "PZO.cif"          # or a key, e.g. "PZO"
 hkl_to_do = [1, 1, 0]      # OR [[1,1,0], [0,0,1]]
 is_uvw = false
 phonons_seed = 15
+
 
 [microscope]#Nion, TCD, 200kV
 HT_value = 200000 #V

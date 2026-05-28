@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "abtem-run"
+version = "0.1.0"
+description = "STEM/TEM image simulation pipeline built on top of abtem + ase"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Vasily A. Lebedev" },
+    { name = "Ivan S. Titov" },
+]
+keywords = ["stem", "tem", "abtem", "ase", "multislice", "simulation", "crystallography"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    # Core scientific stack
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "dask",
+    # Microscopy / crystallography
+    "abtem",
+    "ase",
+    "diffpy.structure",
+    # Config + IO
+    "pydantic>=2",
+    "tomli-w",
+    "zarr<3",  # abtem's to_zarr output path relies on Zarr v2 behavior
+]
+
+[project.scripts]
+abtem-run = "abtem_run.cli:main"
+
+[project.optional-dependencies]
+# GPU deps are install-environment-specific (CUDA toolkit version, etc.) and
+# are not pinned here; install them manually for now.
+# Example: `pip install cupy-cuda12x dask-cuda rmm-cu12`
+gpu = []
+
+[project.urls]
+Homepage = "https://github.com/LebedevV/STEM_tools"
+Issues = "https://github.com/LebedevV/STEM_tools/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/abtem_run"]

@@ -3,18 +3,14 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-'''
-This code is only for reading and validating the config.toml
-Need to be edited only if new variables are added or config file is splitted
-'''
+# This code is only for reading and validating the config.toml
+# Need to be edited only if new variables are added or config file is split
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
-from typing import Union, Any
-import tomllib
 from pathlib import Path
-import os
+from typing import Any
 
-#config_fname = 'config.toml'
+import tomllib
+from pydantic import BaseModel, Field, field_validator
 
 #If adding a new class of variables, add it to AppConfig, too!
 class Paths(BaseModel):
@@ -24,12 +20,7 @@ class Paths(BaseModel):
 	sample_name: str = Field()
 	
 class Job(BaseModel):
-	"""
-	Job-defining parameters (should be only one per config TOML).
-	- phase: CIF filename or a key
-	- hkl_to_do: either [h,k,l] or [[h,k,l], ...]
-	- is_uvw: whether HKL vectors are interpreted as UVW
-	"""
+	"""Job-defining parameters (one per config TOML)."""
 	phase: str = Field()
 	hkl_to_do: list[int] | list[list[int]] = Field()
 	is_uvw: bool = Field()
@@ -48,7 +39,7 @@ class Job(BaseModel):
 			return v
 		raise ValueError("hkl_to_do must be [h,k,l] or a list of [h,k,l] entries.")
 	
-class GPU_related(BaseModel):
+class GpuRelated(BaseModel):
 	use_gpu: bool = Field()
 	dask_cuda: bool = Field()
 	cupy_fft_cache_size: str = Field()
@@ -73,7 +64,7 @@ class Microscope(BaseModel):
 	bfinner: float = Field()
 	bfouter: float = Field()
 	
-class Lamella_Settings(BaseModel):
+class LamellaSettings(BaseModel):
 	max_uvw: int = Field()
 	sblock_size: float = Field()
 	scan_s: float = Field()
@@ -91,16 +82,15 @@ class Lamella_Settings(BaseModel):
 
 class AppConfig(BaseModel):
 	paths: Paths
-	gpu_related: GPU_related
+	gpu_related: GpuRelated
 	microscope: Microscope
-	lamella_settings: Lamella_Settings
+	lamella_settings: LamellaSettings
 	simulations: Simulations
 	job: Job
 
 def load_config(path: str | Path = 'config.toml') -> AppConfig:
-	here = Path(__file__).resolve()
-	#print(path)
-	full_path = here.parent / path
+	# Path is interpreted verbatim — pass an absolute path or one relative to CWD.
+	full_path = Path(path).resolve()
 	with full_path.open("rb") as f:
 		data = tomllib.load(f)
 	return AppConfig.model_validate(data)
