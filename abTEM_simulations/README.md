@@ -12,7 +12,7 @@ Trigonal symmentry has not been assessed yet; looking forward to hear any feedba
 Known issues and TODO:
  - (done) move most variables to JSON
  - add a support of variables as lists to iterate over all combinations
- - fix the issue with random_seed for vacancies generator
+ - (done) fix the issue with random_seed for vacancies generator
  - add a possibility of different types of vacancies simultaneously
  - add a way to import an ase set
  - output file names to reflect was it uvw or hkl

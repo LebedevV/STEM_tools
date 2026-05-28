@@ -86,12 +86,14 @@ tilt_degrees = false #true - degrees, false - mrad
 add_vacancies_toggle = false
 element_to_remove = 'Ti'
 probability_of_vac = 0.3
+vacancies_seed = 0   #RNG seed for vacancy placement (separate from phonons_seed)
 
 [job]
-phase = "PZO.cif"          # or a key, e.g. "PZO"
+phase = "PZO.cif"          # CIF filename (resolved against paths.folder)
 hkl_to_do = [1, 1, 0]      # OR [[1,1,0], [0,0,1]]
 is_uvw = false
 phonons_seed = 15
+inplane_angle = 0          # degrees before crop, or 'auto' (detect from atom_to_zero); 0 = none
 
 
 [microscope]#Nion, TCD, 200kV
