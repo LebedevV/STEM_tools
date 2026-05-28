@@ -25,7 +25,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .aggregate import aggregate_job
+from .aggregate import aggregate_job, aggregate_series
 from .generator_run import generate_run
 from .worker import run_one_seed
 
@@ -150,9 +150,50 @@ def main():
 			"each job. Idempotent. Cannot be combined with --generate-only."
 		),
 	)
+	parser.add_argument(
+		"--aggregate",
+		default=None,
+		metavar="JOB_DIR",
+		help=(
+			"shorthand for `abtem-run-aggregate <JOB_DIR>`: aggregate one job "
+			"dir (no generator, no workers). Useful when workers ran out-of-band."
+		),
+	)
+	parser.add_argument(
+		"--aggregate-series",
+		default=None,
+		metavar="JOB_DIR",
+		help=(
+			"emit cumulative-mean frames at <JOB_DIR>/aggregate/n_<k:03d>/ for "
+			"k in 1..N (N = --n-phonons or all available seeds); for visualising "
+			"1/sqrt(N) convergence."
+		),
+	)
+	parser.add_argument(
+		"--n-phonons",
+		type=int,
+		default=None,
+		metavar="N",
+		help="cap N for --aggregate-series (default: all available seeds).",
+	)
 	args = parser.parse_args()
 
-	if args.resume is not None:
+	# Standalone aggregate modes are mutually exclusive with the pipeline
+	# and with each other.
+	aggregate_modes = sum(x is not None for x in (args.aggregate, args.aggregate_series))
+	if aggregate_modes > 1:
+		parser.error("--aggregate and --aggregate-series are mutually exclusive")
+	if aggregate_modes == 1 and (args.resume is not None or args.generate_only):
+		parser.error("--aggregate / --aggregate-series cannot be combined with --resume or --generate-only")
+	if args.n_phonons is not None and args.aggregate_series is None:
+		parser.error("--n-phonons only applies to --aggregate-series")
+
+	if args.aggregate is not None:
+		aggregate_job(args.aggregate)
+	elif args.aggregate_series is not None:
+		n_emitted = aggregate_series(args.aggregate_series, n_phonons=args.n_phonons)
+		print(f"abtem-run: emitted {n_emitted} aggregate/n_<k>/ frame(s)")
+	elif args.resume is not None:
 		if args.generate_only:
 			parser.error("--generate-only cannot be combined with --resume")
 		run_pipeline(resume_dir=args.resume)

@@ -30,6 +30,7 @@ class RunContext:
 	detectors: list[str]
 	test_enabled: bool
 	blur_boundary: str
+	blur_sigmas: list[float]
 	emit_static_baseline: bool
 	override_sampling: float | bool
 
@@ -114,6 +115,7 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 	detectors = cfg.microscope.detectors
 	test_enabled = cfg.simulations.test_enabled
 	blur_boundary = cfg.simulations.blur_boundary
+	blur_sigmas = list(cfg.simulations.blur_sigmas)
 	emit_static_baseline = cfg.simulations.emit_static_baseline
 	override_sampling = cfg.simulations.override_sampling
 
@@ -190,6 +192,7 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		detectors=detectors,
 		test_enabled=test_enabled,
 		blur_boundary=blur_boundary,
+		blur_sigmas=blur_sigmas,
 		emit_static_baseline=emit_static_baseline,
 		override_sampling=override_sampling,
 		scan_start=scan_start,
@@ -214,7 +217,6 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		dask_client=dask_client,
 	)
 
-BLUR_SIGMAS = [0.025, 0.1, 0.25]
 
 def make_potential(target):
 	"""abtem.Potential with our standard params; returns lazy (caller chooses to build/compute)."""

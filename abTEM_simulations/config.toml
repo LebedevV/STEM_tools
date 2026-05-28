@@ -37,6 +37,8 @@ do_full_run = true
 
 #test_enabled = true: keep per-seed outputs/ and dump displaced .xyz per seed
 test_enabled = false
+#gaussian-blur preview sigmas (real-space units); one TIFF per sigma per channel; [] to skip
+blur_sigmas = [0.025, 0.1, 0.25]
 
 [lamella_settings]
 #Max int to search for uvw

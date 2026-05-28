@@ -36,7 +36,6 @@ import tomli_w
 
 from abtem_run.config import load_config
 from abtem_run.pipeline import (
-	BLUR_SIGMAS,
 	expand_cfg,
 	make_potential,
 	resolve_context,
@@ -48,6 +47,11 @@ from abtem_run.simulation import (
 	make_lamella,
 )
 
+# Frozen historical default. The active pipeline reads sigmas from
+# simulations.blur_sigmas via the aggregator; this legacy in-process path
+# is preserved as-was, with its original hard-coded set.
+LEGACY_BLUR_SIGMAS = [0.025, 0.1, 0.25]
+
 
 def save_images(img, out_dir, prefix, sg, tilt, line_hkl, det_names):
 	for w, iimg in enumerate(img):
@@ -56,7 +60,7 @@ def save_images(img, out_dir, prefix, sg, tilt, line_hkl, det_names):
 		# Q: do we need .mean(axis=0) here?
 		cpu.to_tiff(str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}.tif"))
 		cpu.to_zarr(str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}.zarr"), overwrite=True)
-		for k in BLUR_SIGMAS:
+		for k in LEGACY_BLUR_SIGMAS:
 			cpu.gaussian_filter(k, boundary='constant').to_tiff(
 				str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}_{str(k).replace('.','-')}.tif"))
 

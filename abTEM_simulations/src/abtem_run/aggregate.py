@@ -39,7 +39,7 @@ import abtem
 import matplotlib.pyplot as plt
 
 from .config import load_config
-from .pipeline import BLUR_SIGMAS, make_potential, resolve_context
+from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, build_lamella_from_config
 
 
@@ -92,10 +92,13 @@ def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
 	out_dir.rmdir()
 
 
-def _mean_zarr_channel(out_dir: Path, archive_dir: Path, channel_name: str):
+def _mean_zarr_channel(out_dir: Path, archive_dir: Path, channel_name: str, *, max_seeds: int | None = None):
 	"""Cross-seed mean of ``seed_*_<channel_name>.zarr`` over outputs/ ∪
-	outputs_archive/; None if none exist."""
+	outputs_archive/; None if none exist. ``max_seeds`` (used by
+	aggregate_series) caps to the first N seeds (sorted by seed integer)."""
 	zarr_files = _collect_seed_zarrs(out_dir, archive_dir, channel_name)
+	if max_seeds is not None:
+		zarr_files = zarr_files[:max_seeds]
 	if not zarr_files:
 		return None
 
@@ -106,13 +109,23 @@ def _mean_zarr_channel(out_dir: Path, archive_dir: Path, channel_name: str):
 	return mean.compute() if hasattr(mean, "compute") else mean
 
 
-def _emit_channel(out_dir: Path, archive_dir: Path, agg_dir: Path, channel_name: str, *,
-		with_blurs: bool, blur_boundary: str = "nearest"):
+def _emit_channel(
+	out_dir: Path,
+	archive_dir: Path,
+	agg_dir: Path,
+	channel_name: str,
+	*,
+	with_blurs: bool,
+	blur_sigmas: list[float] | None = None,
+	blur_boundary: str = "nearest",
+	max_seeds: int | None = None,
+):
 	"""Aggregate one channel; write {channel}.{tif,zarr} (+ blurred TIFFs if
 	requested) and return the cross-seed mean (or None if no seeds produced
 	this channel — used for "no data, skip"; an abtem read/stack/mean error
-	would raise, not return None)."""
-	mean = _mean_zarr_channel(out_dir, archive_dir, channel_name)
+	would raise, not return None). ``max_seeds`` (used by aggregate_series)
+	limits the mean to the first ``max_seeds`` seeds (sorted by seed integer)."""
+	mean = _mean_zarr_channel(out_dir, archive_dir, channel_name, max_seeds=max_seeds)
 	if mean is None:
 		return None
 
@@ -120,8 +133,7 @@ def _emit_channel(out_dir: Path, archive_dir: Path, agg_dir: Path, channel_name:
 	mean.to_zarr(str(agg_dir / f"{channel_name}.zarr"), overwrite=True)
 
 	if with_blurs:
-		# Same blur set as the legacy save_images.
-		for sigma in BLUR_SIGMAS:
+		for sigma in (blur_sigmas or []):
 			tag = str(sigma).replace(".", "-")
 			blurred = mean.gaussian_filter(sigma, boundary=blur_boundary)
 			blurred.to_tiff(str(agg_dir / f"{channel_name}_{tag}.tif"))
@@ -156,6 +168,37 @@ def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, kind_label: st
 	borders = cfg.lamella_settings.borders
 	proj_cropped = proj.crop([scan_s, scan_s], offset=(borders, borders))
 	proj_cropped.to_tiff(str(agg_dir / f"{stem}_scanned.tif"))
+
+
+def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, target_dir: Path) -> None:
+	"""Projection-preview block shared by aggregate_job + aggregate_series.
+
+	Writes the phonon-averaged projection (mean of ``seed_*_potproj.zarr``)
+	at ``target_dir/potential_projection.*`` and, if
+	``simulations.emit_static_baseline``, a separate static-lattice projection
+	at ``target_dir/potential_projection_static.*``. No-op if neither applies.
+
+	The probe-shape side panel needs a grid, so the static ground-state
+	potential is built once here (one cheap build) and reused for both the
+	probe and the optional static baseline.
+	"""
+	mean_proj = _mean_zarr_channel(out_dir, archive_dir, "potproj")
+	if mean_proj is None and not cfg.simulations.emit_static_baseline:
+		return
+
+	static_potential = make_potential(
+		build_lamella_from_config(cfg, cfg.job.hkl_list[0])
+	).build().compute()
+	probe = add_probe(ctx, static_potential)
+
+	if mean_proj is not None:
+		_write_projection(mean_proj, probe, cfg, target_dir,
+			"potential_projection", "phonon-averaged projection")
+
+	if cfg.simulations.emit_static_baseline:
+		static_proj = static_potential.project().to_cpu().compute()
+		_write_projection(static_proj, probe, cfg, target_dir,
+			"potential_projection_static", "static lattice projection")
 
 
 def _write_pattern_preview(measurement, cfg, agg_dir: Path, stem: str,
@@ -245,7 +288,7 @@ def aggregate_job(job_dir) -> None:
 	if ctx.do_full_run:
 		for det_name in ctx.detectors:
 			_emit_channel(out_dir, archive_dir, agg_dir, det_name, with_blurs=True,
-				blur_boundary=ctx.blur_boundary)
+				blur_sigmas=ctx.blur_sigmas, blur_boundary=ctx.blur_boundary)
 
 	# 2. Plane-wave diffraction
 	if ctx.do_diffraction:
@@ -259,28 +302,102 @@ def aggregate_job(job_dir) -> None:
 		if cbed_mean is not None:
 			_write_pattern_preview(cbed_mean, cfg, agg_dir, "cbed", "CBED", figsize=(8, 6))
 
-	# 4. Projection preview(s). Build the ground-state potential once for
-	#    the probe-shape side panel and reuse for the optional static one.
-	mean_proj = _mean_zarr_channel(out_dir, archive_dir, "potproj")
-	if mean_proj is not None or cfg.simulations.emit_static_baseline:
-		static_potential = make_potential(
-			build_lamella_from_config(cfg, cfg.job.hkl_list[0])
-		).build().compute()
-		probe = add_probe(ctx, static_potential)
-
-		if mean_proj is not None:
-			_write_projection(mean_proj, probe, cfg, agg_dir,
-				"potential_projection", "phonon-averaged projection")
-
-		if cfg.simulations.emit_static_baseline:
-			static_proj = static_potential.project().to_cpu().compute()
-			_write_projection(static_proj, probe, cfg, agg_dir,
-				"potential_projection_static", "static lattice projection")
+	# 4. Projection preview(s): phonon-averaged + optional static baseline.
+	_write_projection_previews(out_dir, archive_dir, ctx, cfg, agg_dir)
 
 	# 5. Archive the per-seed outputs so future extends can build on them
 	#    (test_enabled keeps outputs/ in place for diagnostics).
 	if not ctx.test_enabled:
 		_archive_per_seed_outputs(out_dir, archive_dir)
+
+
+def aggregate_series(job_dir, *, n_phonons: int | None = None) -> int:
+	"""Emit cumulative-mean frames at <job_dir>/aggregate/n_<k:03d>/ for
+	k in 1..N. Each subdir holds the per-channel aggregate computed from the
+	first k seeds (sorted by seed integer) — useful for visualising 1/sqrt(N)
+	convergence without re-running multislice.
+
+	n_phonons caps N (default: all available seeds). Returns N emitted.
+	The projection preview (phonon-averaged + optional static baseline) is
+	written ONCE at aggregate/, over ALL available seeds — not per-k.
+	Does NOT archive outputs/ (read-only over the per-seed data).
+
+	Raises FileNotFoundError / RuntimeError on the same conditions as
+	aggregate_job.
+	"""
+	job_dir = Path(job_dir).resolve()
+	out_dir = job_dir / "outputs"
+	archive_dir = job_dir / "outputs_archive"
+	agg_dir = job_dir / "aggregate"
+
+	if not out_dir.exists() and not archive_dir.exists():
+		raise FileNotFoundError(f"No outputs/ or outputs_archive/ directory in {job_dir}")
+
+	seeds_dir = job_dir / "seeds"
+	if seeds_dir.exists():
+		remaining = list(seeds_dir.glob("*.todo"))
+		if remaining:
+			raise RuntimeError(
+				f"Job incomplete: {len(remaining)} .todo file(s) remain in {seeds_dir}. "
+				"Run all workers before aggregating."
+			)
+
+	toml_candidates = list(job_dir.glob("*.toml"))
+	if not toml_candidates:
+		raise FileNotFoundError(f"No *.toml in {job_dir}")
+	if len(toml_candidates) > 1:
+		raise ValueError(
+			f"Expected one *.toml in {job_dir}, found {len(toml_candidates)}: "
+			f"{[p.name for p in toml_candidates]}"
+		)
+
+	cfg = load_config(toml_candidates[0])
+	ctx = resolve_context(cfg)
+	agg_dir.mkdir(parents=True, exist_ok=True)
+
+	# Total seeds from the first channel that has any zarrs (scan detectors
+	# first, then diff, then cbed).
+	probe_channels: list[str] = []
+	if ctx.do_full_run:
+		probe_channels.extend(ctx.detectors)
+	if ctx.do_diffraction:
+		probe_channels.append("diff")
+	if ctx.do_cbed:
+		probe_channels.append("cbed")
+	total_seeds = 0
+	for ch in probe_channels:
+		total_seeds = len(_collect_seed_zarrs(out_dir, archive_dir, ch))
+		if total_seeds:
+			break
+	if total_seeds == 0:
+		raise FileNotFoundError(
+			f"No per-seed zarrs in outputs/ or outputs_archive/ under {job_dir}; "
+			"nothing to aggregate."
+		)
+	n_max = total_seeds if n_phonons is None else min(int(n_phonons), total_seeds)
+	if n_max < 1:
+		raise ValueError(f"n_phonons must be >= 1, resolved to {n_max}")
+
+	# Projection preview(s) — once, at agg_dir (not per-k):
+	# phonon-averaged over ALL seeds + optional static baseline.
+	_write_projection_previews(out_dir, archive_dir, ctx, cfg, agg_dir)
+
+	# Per-k cumulative-mean frames.
+	for k in range(1, n_max + 1):
+		k_dir = agg_dir / f"n_{k:03d}"
+		k_dir.mkdir(parents=True, exist_ok=True)
+		if ctx.do_full_run:
+			for det_name in ctx.detectors:
+				_emit_channel(
+					out_dir, archive_dir, k_dir, det_name,
+					with_blurs=True, blur_sigmas=ctx.blur_sigmas, max_seeds=k,
+				)
+		if ctx.do_diffraction:
+			_emit_channel(out_dir, archive_dir, k_dir, "diff", with_blurs=False, max_seeds=k)
+		if ctx.do_cbed:
+			_emit_channel(out_dir, archive_dir, k_dir, "cbed", with_blurs=False, max_seeds=k)
+
+	return n_max
 
 
 def main():
