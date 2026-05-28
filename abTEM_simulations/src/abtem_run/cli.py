@@ -53,7 +53,8 @@ class RunContext:
 	element_to_remove: str
 	probability_of_vac: float
 	add_vacancies_toggle: bool
-	
+	vacancies_seed: int
+
 	# frozen phonons settings
 	frozen_phonons: int | None
 	fph_sigma: float | None
@@ -65,22 +66,6 @@ class RunContext:
 
 #config is expected to be in the same folder as a code
 #'config.toml' is in use if None is provided
-
-#######
-####### Loading params
-
-#Short names for cif files
-cif_files = {
-		'Pbam':'Pbam.cif',
-		'Pm3m':'Pm3m.cif',
-		'I4cm':'I4cm.cif',
-		'Ima2':'Ima2.cif',
-		'CC':'CC.cif',
-		'R-3c':'R-3c.cif',
-		'2212':'2212_1541124.cif',
-		'PZO':'PZO.cif'
-}
-
 
 
 def _as_list(v):
@@ -214,6 +199,7 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		element_to_remove=element_to_remove,
 		probability_of_vac=probability_of_vac,
 		add_vacancies_toggle=add_vacancies_toggle,
+		vacancies_seed=cfg.lamella_settings.vacancies_seed,
 		frozen_phonons=frozen_phonons,
 		fph_sigma=fph_sigma,
 		phonons_seed=cfg.job.phonons_seed,
@@ -338,18 +324,21 @@ def prepare_job(ctx, hkl_set,is_uvw=True,inplane_angle=None):
 	atom_to_zero = cfg.lamella_settings.atom_to_zero
 	extra_shift_z = cfg.lamella_settings.extra_shift_z
 
-	for i in hkl_set.keys():
-		for j in hkl_set[i]:
-			print('Generating',i,j)
-			cif_path = ctx.folder + cif_files[i]
+	# hkl_set is {<cif_filename>: [[h,k,l], ...]}. The key is the CIF filename
+	# (appended to ctx.folder); its stem (minus .cif) is the 'symm' output label.
+	for cif_filename, hkls in hkl_set.items():
+		stem = cif_filename[:-4] if cif_filename.lower().endswith('.cif') else cif_filename
+		for j in hkls:
+			print('Generating',cif_filename,j)
+			cif_path = ctx.folder + cif_filename
 			surf = sim.make_lamella(cif_path,j,sblock_size,ctx.lamella_sizes,atom_to_zero,tol,max_uvw,
 						is_uvw=is_uvw,inplane_angle=inplane_angle,
 						extra_shift_z=extra_shift_z,vac_xy=borders,vac_z=borders,
 						global_tilt=ctx.global_tilt,tilt_degrees=ctx.tilt_degrees)
 
 			if ctx.add_vacancies_toggle:
-				surf = sim.add_vacancies(surf,ctx.element_to_remove,ctx.probability_of_vac)
-				print('Vacancies applied to '+ctx.element_to_remove+ ', probability '+str(ctx.probability_of_vac))
+				surf = sim.add_vacancies(surf,ctx.element_to_remove,ctx.probability_of_vac,seed=ctx.vacancies_seed)
+				print('Vacancies applied to '+ctx.element_to_remove+ ', probability '+str(ctx.probability_of_vac)+', seed '+str(ctx.vacancies_seed))
 
 			# Eager build+compute is fine for a single static lattice.
 			potential = make_potential(surf).build().compute()
@@ -357,7 +346,7 @@ def prepare_job(ctx, hkl_set,is_uvw=True,inplane_angle=None):
 			frozen = abtem.FrozenPhonons(surf, num_configs=ctx.frozen_phonons, sigmas=ctx.fph_sigma, seed=ctx.phonons_seed)
 			fph_potential = make_potential(frozen)
 			full_dataset.append({
-				'symm':i,
+				'symm':stem,
 				'hkl':j,
 				'surface':surf,
 				'potential':potential,
@@ -435,15 +424,18 @@ def simulation_run(s,cfg,
 	del dataset
 
 def main():
-	# NOTE: the config filename, the {phase: [hkl]} mapping, is_uvw, and
-	# inplane_angle below are all set manually here. The [job] section in
-	# config.toml (cfg.job.phase / .hkl_to_do / .is_uvw) is parsed and
-	# validated by pydantic but is NOT consumed at runtime — edit the
-	# literals on the next lines to change what runs. TODO: wire cfg.job
-	# through and drop these hardcoded values.
+	# Everything that controls *what* runs comes from [job]: phase (CIF
+	# filename), hkl_to_do, is_uvw, inplane_angle. Sweeps over physical
+	# parameters (frozen_phonons, fph_sigma, tilt, ...) come from expand_cfg.
 	cfg0 = confread.load_config("config.toml")
 	for cfg_run in expand_cfg(cfg0):
-		simulation_run({'PZO': [[1,1,0]]}, cfg_run,inplane_angle=0)
+		hkl_set = {cfg_run.job.phase: cfg_run.job.hkl_list}
+		simulation_run(
+			hkl_set,
+			cfg_run,
+			is_uvw=cfg_run.job.is_uvw,
+			inplane_angle=cfg_run.job.inplane_angle_resolved,
+		)
 
 	print('Finished')
 

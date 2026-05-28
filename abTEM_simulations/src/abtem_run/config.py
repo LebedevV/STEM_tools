@@ -25,6 +25,7 @@ class Job(BaseModel):
 	hkl_to_do: list[int] | list[list[int]] = Field()
 	is_uvw: bool = Field()
 	phonons_seed: int = Field(default=0)
+	inplane_angle: float | str = Field(default=0.0)  # degrees, or 'auto'
 
 	@field_validator("hkl_to_do")
 	@classmethod
@@ -38,7 +39,32 @@ class Job(BaseModel):
 					raise ValueError("Each HKL entry must be a list of 3 integers.")
 			return v
 		raise ValueError("hkl_to_do must be [h,k,l] or a list of [h,k,l] entries.")
-	
+
+	@field_validator("inplane_angle")
+	@classmethod
+	def validate_inplane_angle(cls, v: Any):
+		# A number (degrees), or the literal 'auto' (case-insensitive), which
+		# maps to None at use time -> make_lamella's atom_to_zero auto-detect.
+		if isinstance(v, str):
+			if v.lower() == "auto":
+				return "auto"
+			raise ValueError("inplane_angle as a string must be 'auto'")
+		return float(v)
+
+	@property
+	def hkl_list(self) -> list[list[int]]:
+		"""hkl_to_do normalized to list-of-lists regardless of input shape."""
+		if len(self.hkl_to_do) == 3 and all(isinstance(x, int) for x in self.hkl_to_do):
+			return [list(self.hkl_to_do)]  # type: ignore[list-item]
+		return [list(row) for row in self.hkl_to_do]
+
+	@property
+	def inplane_angle_resolved(self) -> float | None:
+		"""inplane_angle as a float, or None for 'auto' (auto-detect branch)."""
+		if isinstance(self.inplane_angle, str):
+			return None
+		return float(self.inplane_angle)
+
 class GpuRelated(BaseModel):
 	use_gpu: bool = Field()
 	dask_cuda: bool = Field()
@@ -79,6 +105,7 @@ class LamellaSettings(BaseModel):
 	add_vacancies_toggle: bool = Field()
 	element_to_remove: str = Field()
 	probability_of_vac: float | list[float] = Field()
+	vacancies_seed: int = Field(default=0)  # RNG seed for add_vacancies; distinct from job.phonons_seed
 
 class AppConfig(BaseModel):
 	paths: Paths

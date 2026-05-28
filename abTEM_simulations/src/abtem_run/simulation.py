@@ -8,7 +8,6 @@ import ase
 import numpy as np
 import diffpy.structure
 from scipy.spatial.transform import Rotation as R
-import random
 
 import matplotlib.pyplot as plt
 import dask.array as da
@@ -396,25 +395,23 @@ def add_scan(ctx, probe, pot):
 		potential=pot
 	)
 
-# TODO: seed RNG (currently unseeded random.random; runs not reproducible).
-def add_vacancies(surf,el,prob):
+def add_vacancies(surf,el,prob,seed=0):
 	'''
-	This function removes atoms of a certain type from a surf object with a given probability	
+	This function removes atoms of a certain type from a surf object with a given probability
 	Inputs:
 		surf - ase surface
 		el - str, element name to remove
 		prob - float, (0,1], probability of atom to disappear
+		seed - int, RNG seed; same seed + surf + (el,prob) -> same vacancy pattern
 	Output:
 		cropped - ase surface
 	'''
 
-	at_types = surf.get_chemical_symbols()
-	
+	at_types = np.array(surf.get_chemical_symbols())
+	rng = np.random.default_rng(seed)
 	#We select atom type and marking those to be removed
-	mask = (np.array(at_types) == el) & np.array( [(random.random() < prob) for _ in at_types ])
-	cropped = surf[~mask]
-	
-	return cropped
+	mask = (at_types == el) & (rng.random(len(at_types)) < prob)
+	return surf[~mask]
 
 #Previews plot
 def plot_dataset(data,ctx,is_uvw):
