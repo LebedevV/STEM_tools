@@ -115,16 +115,10 @@ class AppConfig(BaseModel):
 	simulations: Simulations
 	job: Job
 
-def _resolve_path_field(value: str, base: Path) -> str:
-	"""
-	Resolve a [paths] field: absolute paths pass through, relative ones
-	resolve against `base` (the config file's directory). Returns a string
-	ending in '/' so the `folder + phase` / `folder_sim + extr` concatenation
-	patterns keep working.
-	"""
-	p = Path(value)
-	resolved = p.resolve() if p.is_absolute() else (base / p).resolve()
-	return str(resolved) + "/"
+# Resolve a [paths] field: absolute paths pass through, relative ones resolve
+# against `base` (the config file's dir). Trailing '/' keeps folder+phase /
+# folder_sim+extr concatenation working.
+_resolve_path_field = lambda value, base: str((Path(value) if Path(value).is_absolute() else base / value).resolve()) + "/"  # noqa: E731
 
 def load_config(path: str | Path = 'config.toml') -> AppConfig:
 	# The config-file path itself is verbatim (absolute or relative to CWD).
