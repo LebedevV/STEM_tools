@@ -78,17 +78,13 @@ def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs
 			blurred.to_tiff(str(agg_dir / f"{channel_name}_{tag}.tif"))
 
 
-def _emit_potential_projection(ctx, cfg, agg_dir: Path) -> None:
-	"""Build + save the static-lattice projected potential preview.
-
-	One ``Potential.project().compute()`` per job (independent of how many
-	seeds the job had). Saves three files:
+def _emit_potential_projection(ctx, cfg, potential, agg_dir: Path) -> None:
+	"""Save the static-lattice projected potential preview from a pre-built
+	``potential``. Saves three files:
 	  - ``potential_projection.png``   side-by-side projection + probe shape
 	  - ``potential_projection.tif``   raw projection as TIFF
 	  - ``potential_projection_scanned.tif``   cropped to scan area
 	"""
-	lamella = _build_lamella(ctx, cfg)
-	potential = _build_potential(lamella)
 
 	proj = potential.project().to_cpu().compute()
 	probe = add_probe(ctx, potential)
@@ -180,8 +176,10 @@ def aggregate_job(job_dir) -> None:
 	if ctx.do_cbed:
 		_emit_channel(out_dir, agg_dir, "cbed", with_blurs=False)
 
-	# 4. Static-lattice projected potential preview
-	_emit_potential_projection(ctx, cfg, agg_dir)
+	# 4. Static-lattice projected potential preview (build the ground-state
+	#    potential once, here, and hand it to the writer).
+	static_potential = _build_potential(_build_lamella(ctx, cfg))
+	_emit_potential_projection(ctx, cfg, static_potential, agg_dir)
 
 	# 5. Cleanup unless test mode is on
 	if not ctx.test_enabled:
