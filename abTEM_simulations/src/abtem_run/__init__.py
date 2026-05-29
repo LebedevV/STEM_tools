@@ -150,15 +150,12 @@ from .simulation import (
 	add_scan,
 	add_vacancies,
 	make_lamella,
-	plot_dataset,
 )
 from .pipeline import (
 	RunContext,
 	expand_cfg,
 	make_potential,
 	resolve_context,
-	save_config,
-	simulation_run,
 )
 from .generator_run import generate_run
 from .worker import run_one_seed
@@ -170,19 +167,16 @@ __all__ = [
 	"AppConfig",
 	"Job",
 	"load_config",
-	# simulation (geometry / preview)
+	# simulation (geometry)
 	"add_probe",
 	"add_scan",
 	"add_vacancies",
 	"make_lamella",
-	"plot_dataset",
-	# pipeline (legacy in-process orchestration)
+	# pipeline (shared infrastructure for the worker path)
 	"RunContext",
 	"expand_cfg",
 	"make_potential",
 	"resolve_context",
-	"save_config",
-	"simulation_run",
 	# worker pipeline
 	"generate_run",
 	"run_one_seed",

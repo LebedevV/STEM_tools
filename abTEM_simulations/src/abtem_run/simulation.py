@@ -3,13 +3,11 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-from pathlib import Path
 import ase
 import numpy as np
 import diffpy.structure
 from scipy.spatial.transform import Rotation as R
 
-import matplotlib.pyplot as plt
 import dask.array as da
 import dask
 import abtem
@@ -447,83 +445,3 @@ def build_lamella_from_config(cfg, hkl):
 		)
 	return lamella
 
-#Previews plot
-def plot_dataset(data,ctx,is_uvw):
-	'''
-	This function plots a few previews of probe and pseudopotential
-	Inputs
-		data - dict, in the same format as in the __main__
-		ctx - RunContext, supplies all microscope, scan, and path parameters
-		is_uvw - boolean, reflects if the requested orientation vector is UVW (True) or HKL (False)
-	'''
-
-	out_dir = Path(ctx.folder_sim)
-	sample_name = ctx.cfg.paths.sample_name
-	global_tilt = ctx.global_tilt
-	scan_s = ctx.cfg.lamella_settings.scan_s
-	borders = ctx.cfg.lamella_settings.borders
-
-	surf = data['surface']
-	sg = data['symm']
-	potential = data['potential']
-	fph_potential = data['fph_potential']
-
-	probe = add_probe(ctx, potential)
-	fph_probe = add_probe(ctx, fph_potential)
-	scan = add_scan(ctx, probe, potential)
-	
-	line_hkl = ''.join([str(q) for q in data['hkl']])
-	if is_uvw:
-		str_hkl = 'uvw ['+line_hkl+']'
-	else:
-		str_hkl = 'hkl ['+line_hkl+']'
-
-	proj_cpu = potential.project().to_cpu().compute()
-
-	fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 4))
-	
-	proj_cpu.show(
-		cmap="magma", figsize=(4, 4), title="Projected Electrostatic Potential", ax=ax1
-	)
-	#probe.build()
-	probe.show(figsize=(4, 4), title="Real Space Probe", ax=ax2)
-	fig.suptitle(sample_name+', '+sg+', '+str_hkl,fontsize=18)
-	fig.tight_layout()
-	fig.savefig(str(out_dir / f"{sg}_{line_hkl}_{global_tilt}_potential.png"),dpi=600)
-	plt.close()
-
-	proj_cpu.to_tiff(str(out_dir / f"{sg}_{line_hkl}_{global_tilt}_potential.tif"))
-	proj_cropped = proj_cpu.crop( [scan_s,scan_s], offset=(borders, borders))
-	proj_cropped.to_tiff(str(out_dir / f"{sg}_{line_hkl}_{global_tilt}_scanned_potential.tif"))
-		
-	fph_proj_cpu = fph_potential.project().to_cpu()
-	fph_proj_mean = fph_proj_cpu.mean(axis=0).compute()
-	
-	#TODO this plot is optional
-	fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 4))
-		
-	fph_proj_mean.show(
-		cmap="magma", figsize=(4, 4), title="Projected Electrostatic Potential", ax=ax1
-	)
-
-	fph_probe.show(figsize=(4, 4), title="Real Space Probe", ax=ax2)
-	fig.suptitle(sample_name+', '+sg+', '+str_hkl,fontsize=18)
-	fig.tight_layout()
-	fig.savefig(str(out_dir / f"{sg}_{line_hkl}_{global_tilt}_fph_potential.png"),dpi=600)
-	plt.close()
-	
-	#This one is the most important - it draws 3 projections of a final block
-	fig,(ax1,ax2,ax3) = plt.subplots(1, 3, figsize=(15,5))
-	abtem.show_atoms(surf, ax=ax1, title="XY projection" )#, scans=scan)
-	scan.add_to_plot(ax1)
-	abtem.show_atoms(surf, ax=ax2, title="Cross-section", plane='xz')
-	abtem.show_atoms(surf, ax=ax3, title="Cross-section", plane='yz')
-
-	fig.suptitle(sample_name+', '+sg+', '+str_hkl,fontsize=18)
-	fig.savefig(str(out_dir / f"{sg}_{line_hkl}_{global_tilt}_combined.png"),dpi=600)
-	plt.close()
-	print('Checkpoint')
-	fph_proj_mean.to_tiff(str(out_dir / f"{sg}_{line_hkl}_{global_tilt}_fph_potential.tif"))
-
-	proj_cropped = fph_proj_mean.crop( [scan_s,scan_s], offset=(borders, borders))
-	proj_cropped.to_tiff(str(out_dir / f"{sg}_{line_hkl}_{global_tilt}_scanned_fph_potential.tif"))

@@ -111,7 +111,7 @@ def run_diffraction(ctx, potential):
 	"""Plane-wave multislice → diffraction patterns. Returns a CPU-side
 	per-snapshot pattern (no ensemble averaging — that's the aggregator's
 	job, since this worker handles a single seed)."""
-	# CPU-side multislice first (matches the proven pipeline.plot_diffraction
+	# CPU-side multislice first (matches the proven legacy plot_diffraction
 	# path), with a real fallback to the potential's native device.
 	pw = abtem.PlaneWave(energy=ctx.HT_value, device="cpu")
 	try:
