@@ -45,25 +45,14 @@ from .worker import _build_lamella, _build_potential
 
 
 def _mean_zarr_channel(out_dir: Path, channel_name: str):
-	"""Mean ``seed_*_<channel_name>.zarr`` across seeds.
-
-	Returns an abtem Measurement (Images / DiffractionPatterns / etc.) whose
-	calibration is preserved by abtem's own stacking machinery and whose
-	array is the cross-seed mean. Returns None if no per-seed files exist
-	for this channel.
-	"""
+	"""Cross-seed mean of ``seed_*_<channel_name>.zarr``; None if none exist."""
 	zarr_files = sorted(out_dir.glob(f"seed_*_{channel_name}.zarr"))
 	if not zarr_files:
 		return None
 
 	measurements = [abtem.from_zarr(str(f)) for f in zarr_files]
-
-	# Public-API path: abtem.stack adds an ensemble axis, .mean(axis=0)
-	# averages across it. Calibration (sampling, metadata) is preserved
-	# automatically. Force compute now because downstream ops like
-	# `gaussian_filter(boundary='constant')` expect a concrete numpy array
-	# (scipy passes the boundary string to numpy's pad, which chokes on a
-	# dask backing).
+	# .compute() now: downstream gaussian_filter needs a concrete numpy array
+	# (scipy's pad chokes on a dask backing).
 	mean = abtem.stack(measurements).mean(axis=0)
 	return mean.compute() if hasattr(mean, "compute") else mean
 
