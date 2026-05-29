@@ -81,6 +81,9 @@ def _emit_potential_projection(ctx, cfg, potential, agg_dir: Path) -> None:
 	  - ``potential_projection_scanned.tif``   cropped to scan area
 	"""
 
+	# Static single-config ground-state potential -> one 2D projection; there's
+	# no ensemble axis to reduce here (averaging over snapshots is the per-seed
+	# scan channels' job, not this static preview).
 	proj = potential.project().to_cpu().compute()
 	probe = add_probe(ctx, potential)
 
