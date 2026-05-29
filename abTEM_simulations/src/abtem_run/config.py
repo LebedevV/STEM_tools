@@ -76,30 +76,22 @@ class Simulations(BaseModel):
 	override_sampling: float | bool = Field()
 	frozen_phonons: int | str | list[int | str] = Field() #str meant to be only 'None'
 	fph_sigma: float | bool | str | list[float | bool | str] = Field() #bool meant to be converted to None
-	# do_full_run=true: run the per-seed scan (probe.scan over the detectors).
-	# False -> a worker still runs (diffraction/CBED if enabled, potential
-	# build) but skips the scan channels. Gates WHICH per-seed outputs.
-	do_full_run: bool = Field()
-	# dry_run=true: plan only — stop after the generator (planning lamella +
-	# surf.xyz + combined.png); NO workers run, NO multislice at all. Useful
-	# for validating sweep expansion / atom layout without GPU time. Differs
-	# from do_full_run, which gates just the scan inside a worker that DOES run.
+	do_full_run: bool = Field()  # run the per-seed scan (probe.scan)
+	# stop after the generator (plan + artifacts), run no workers
 	dry_run: bool = Field(default=False)
 	# test_enabled=true: aggregator keeps outputs/ intact instead of deleting
 	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
-	# See docs/worker.md decision #6.
 	test_enabled: bool = Field(default=False)
 
 class Microscope(BaseModel):
 	HT_value: int | list[int ] = Field()
-	# Plane-wave diffraction. Default off — it's per-seed (N multislices for
-	# frozen_phonons=N), i.e. expensive; opt in.
+	# Plane-wave diffraction pattern, per seed. Optional extra output; off by default.
 	do_diffraction: bool = Field(default=False)
 	# Convergent-beam diffraction via Probe.multislice at one position. Split
 	# out of do_diffraction in the worker era so they gate independently.
 	do_cbed: bool = Field(default=False)
 	# Which detectors to compute in probe.scan; subset of {haadf, abf, bf}.
-	# Default all three. See docs/worker.md decision #3.
+	# Default all three.
 	detectors: list[str] = Field(default_factory=lambda: ["haadf", "abf", "bf"])
 	convergence_angle: float = Field(default=30.0)   # mrad
 	cbed_max_angle: float | str = Field(default="valid")
