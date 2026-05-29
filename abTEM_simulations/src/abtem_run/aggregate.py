@@ -71,7 +71,7 @@ def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs
 	mean.to_zarr(str(agg_dir / f"{channel_name}.zarr"), overwrite=True)
 
 	if with_blurs:
-		# Same blur set as the legacy save_images in pipeline.py.
+		# Same blur set as the legacy save_images.
 		for sigma in BLUR_SIGMAS:
 			tag = str(sigma).replace(".", "-")
 			blurred = mean.gaussian_filter(sigma, boundary="constant")

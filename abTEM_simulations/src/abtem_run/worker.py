@@ -40,7 +40,7 @@ from .simulation import add_probe, add_scan, build_lamella_from_config
 
 
 # --------------------------------------------------------------------------- #
-# Helpers — factored so an in-memory wrapper can compose them without I/O.
+# Building blocks — factored so an in-memory wrapper can compose them without I/O.
 # --------------------------------------------------------------------------- #
 
 
