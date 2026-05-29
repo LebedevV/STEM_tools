@@ -8,9 +8,10 @@ Aggregator for the abtem-run worker pipeline.
 
 Reads ``<job_dir>/outputs/seed_*_<channel>.zarr`` (written by the worker),
 computes the mean across seeds for each channel, and writes a single
-aggregate per channel into ``<job_dir>/aggregate/``. Also emits a
-static-lattice projected-potential preview (one ``Potential.project()``
-per job, no dependence on the per-seed runs).
+aggregate per channel into ``<job_dir>/aggregate/``. The projected-potential
+channel (``seed_*_potproj``) means to a phonon-averaged projection preview, so
+it reflects the potentials actually propagated through; setting
+``simulations.emit_static_baseline`` adds a separate static-lattice projection.
 
 Cleans up ``outputs/`` unless ``simulations.test_enabled`` is true.
 
@@ -73,35 +74,28 @@ def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs
 			blurred.to_tiff(str(agg_dir / f"{channel_name}_{tag}.tif"))
 
 
-def _emit_potential_projection(ctx, cfg, potential, agg_dir: Path) -> None:
-	"""Save the static-lattice projected potential preview from a pre-built
-	``potential``. Saves three files:
-	  - ``potential_projection.png``   side-by-side projection + probe shape
-	  - ``potential_projection.tif``   raw projection as TIFF
-	  - ``potential_projection_scanned.tif``   cropped to scan area
+def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, title_suffix: str) -> None:
+	"""Write a projected-potential preview from an already-computed projection
+	``proj`` (an ``Images``) and a ``probe`` for the side panel. Saves:
+	  - ``<stem>.png``          side-by-side projection + probe shape
+	  - ``<stem>.tif``          raw projection as TIFF
+	  - ``<stem>_scanned.tif``  cropped to the scan area
 	"""
-
-	# Static single-config ground-state potential -> one 2D projection; there's
-	# no ensemble axis to reduce here (averaging over snapshots is the per-seed
-	# scan channels' job, not this static preview).
-	proj = potential.project().to_cpu().compute()
-	probe = add_probe(ctx, potential)
-
 	fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 4))
 	proj.show(cmap="magma", figsize=(4, 4), title="Projected Electrostatic Potential", ax=ax1)
 	probe.show(figsize=(4, 4), title="Real Space Probe", ax=ax2)
 	sg = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith('.cif') else cfg.job.phase
-	fig.suptitle(f"{cfg.paths.sample_name}, {sg}", fontsize=18)
+	fig.suptitle(f"{cfg.paths.sample_name}, {sg} — {title_suffix}", fontsize=18)
 	fig.tight_layout()
-	fig.savefig(str(agg_dir / "potential_projection.png"), dpi=600)
+	fig.savefig(str(agg_dir / f"{stem}.png"), dpi=600)
 	plt.close(fig)
 
-	proj.to_tiff(str(agg_dir / "potential_projection.tif"))
+	proj.to_tiff(str(agg_dir / f"{stem}.tif"))
 
 	scan_s = cfg.lamella_settings.scan_s
 	borders = cfg.lamella_settings.borders
 	proj_cropped = proj.crop([scan_s, scan_s], offset=(borders, borders))
-	proj_cropped.to_tiff(str(agg_dir / "potential_projection_scanned.tif"))
+	proj_cropped.to_tiff(str(agg_dir / f"{stem}_scanned.tif"))
 
 
 # --------------------------------------------------------------------------- #
@@ -124,7 +118,8 @@ def aggregate_job(job_dir) -> None:
 		   plus three gaussian-blurred TIFF variants.
 		4. If ``do_diffraction``: same for ``diff``.
 		5. If ``do_cbed``: same for ``cbed``.
-		6. Build the static-lattice potential projection preview.
+		6. Mean ``seed_*_potproj.zarr`` into the phonon-averaged projection
+		   preview; if ``emit_static_baseline``, also a separate static one.
 		7. Delete ``outputs/`` unless ``simulations.test_enabled``.
 
 	Raises:
@@ -174,10 +169,29 @@ def aggregate_job(job_dir) -> None:
 	if ctx.do_cbed:
 		_emit_channel(out_dir, agg_dir, "cbed", with_blurs=False)
 
-	# 4. Static-lattice projected potential preview (build the ground-state
-	#    potential once, here, and hand it to the writer).
-	static_potential = make_potential(build_lamella_from_config(cfg, cfg.job.hkl_list[0])).build().compute()
-	_emit_potential_projection(ctx, cfg, static_potential, agg_dir)
+	# 4. Projected potential preview(s). Default is the phonon-averaged
+	#    projection: the mean of each seed's seed_*_potproj.zarr, i.e. the
+	#    projection of the potentials actually propagated through (matches the
+	#    simulation, not an idealised lattice). The probe-shape side panel needs
+	#    a grid, so build the ground-state potential once here (one cheap build)
+	#    and reuse it for both the probe and the optional static baseline.
+	mean_proj = _mean_zarr_channel(out_dir, "potproj")
+	if mean_proj is not None or cfg.simulations.emit_static_baseline:
+		static_potential = make_potential(
+			build_lamella_from_config(cfg, cfg.job.hkl_list[0])
+		).build().compute()
+		probe = add_probe(ctx, static_potential)
+
+		if mean_proj is not None:
+			_write_projection(mean_proj, probe, cfg, agg_dir,
+				"potential_projection", "phonon-averaged")
+
+		# emit_static_baseline: a separate static-lattice projection, kept on
+		# its own and never averaged with the per-seed runs.
+		if cfg.simulations.emit_static_baseline:
+			static_proj = static_potential.project().to_cpu().compute()
+			_write_projection(static_proj, probe, cfg, agg_dir,
+				"potential_projection_static", "static lattice")
 
 	# 5. Cleanup unless test mode is on
 	if not ctx.test_enabled:

@@ -160,9 +160,11 @@ def run_one_seed(job_dir, todo_path) -> None:
 		           job_dir.
 
 	Side effects:
-		- Writes ``outputs/seed_NNNNNN_<channel>.{zarr,tif}`` for each scan
-		  detector + ``_diff.tif`` if ``do_diffraction`` + ``_cbed.tif`` if
-		  ``do_cbed`` + ``_displaced.xyz`` if ``test_enabled``.
+		- Writes ``outputs/seed_NNNNNN_potproj.{zarr,tif}`` (projection of
+		  this seed's potential, always) + ``_<channel>.{zarr,tif}`` for each
+		  scan detector if ``do_full_run`` + ``_diff.{zarr,tif}`` if
+		  ``do_diffraction`` + ``_cbed.{zarr,tif}`` if ``do_cbed`` +
+		  ``_displaced.xyz`` if ``test_enabled``.
 		- Renames ``seeds/seed_NNNNNN.todo`` → ``seeds/seed_NNNNNN.done``.
 
 	On exception: the .todo is NOT renamed, so a retry picks up the same
@@ -207,20 +209,31 @@ def run_one_seed(job_dir, todo_path) -> None:
 	# 4) Build the per-seed Potential.
 	potential = make_potential(displaced).build().compute()
 
-	# 5) Optional plane-wave diffraction. Write .zarr too — the aggregator
+	# 5) Projected potential of THIS seed's displaced lattice — i.e. the exact
+	#    potential the multislice below propagates through. Written per seed
+	#    (always, regardless of do_full_run) so the aggregator can mean it
+	#    across seeds like the scan channels; the result then matches what was
+	#    simulated rather than an idealised static lattice. With do_full_run
+	#    off (and diffraction/cbed off) this is the only output — a cheap
+	#    projection-only preview.
+	proj = potential.project().to_cpu().compute()
+	proj.to_tiff(str(out_dir / f"seed_{seed:06d}_potproj.tif"))
+	proj.to_zarr(str(out_dir / f"seed_{seed:06d}_potproj.zarr"), overwrite=True)
+
+	# 6) Optional plane-wave diffraction. Write .zarr too — the aggregator
 	#    means seed_*_<channel>.zarr across seeds; .tif is for eyeballing.
 	if ctx.do_diffraction:
 		diff = _run_diffraction(ctx, potential)
 		diff.to_tiff(str(out_dir / f"seed_{seed:06d}_diff.tif"))
 		diff.to_zarr(str(out_dir / f"seed_{seed:06d}_diff.zarr"), overwrite=True)
 
-	# 6) Optional CBED.
+	# 7) Optional CBED.
 	if ctx.do_cbed:
 		cbed = _run_cbed(ctx, potential)
 		cbed.to_tiff(str(out_dir / f"seed_{seed:06d}_cbed.tif"))
 		cbed.to_zarr(str(out_dir / f"seed_{seed:06d}_cbed.zarr"), overwrite=True)
 
-	# 7) Optional scan (the main per-seed output).
+	# 8) Optional scan (the main per-seed output).
 	if ctx.do_full_run and ctx.detectors:
 		detector_objs = _detector_objects(ctx, ctx.detectors)
 		measurements = _run_scan(ctx, potential, detector_objs)
@@ -229,7 +242,7 @@ def run_one_seed(job_dir, todo_path) -> None:
 			cpu.to_tiff(str(out_dir / f"seed_{seed:06d}_{det_name}.tif"))
 			cpu.to_zarr(str(out_dir / f"seed_{seed:06d}_{det_name}.zarr"), overwrite=True)
 
-	# 8) Mark this seed done. Atomic rename so concurrent readers
+	# 9) Mark this seed done. Atomic rename so concurrent readers
 	#    (e.g. the aggregator polling for completion) see a coherent state.
 	done_path = todo_path.with_suffix(".done")
 	todo_path.rename(done_path)

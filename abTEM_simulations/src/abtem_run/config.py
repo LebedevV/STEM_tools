@@ -80,6 +80,10 @@ class Simulations(BaseModel):
 	# test_enabled=true: aggregator keeps outputs/ intact instead of deleting
 	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
 	test_enabled: bool = Field(default=False)
+	# emit_static_baseline=true: also emit a separate static-lattice (no
+	# phonons) projected-potential reference, kept apart from the phonon-
+	# averaged result. (Reserved to also gate a static-lattice scan baseline.)
+	emit_static_baseline: bool = Field(default=False)
 
 class Microscope(BaseModel):
 	HT_value: int | list[int ] = Field()
