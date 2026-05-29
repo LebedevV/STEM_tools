@@ -89,7 +89,7 @@ def _detector_objects(ctx, names):
 	return [table[n] for n in names]
 
 
-def _run_scan(ctx, potential, detector_objs):
+def run_scan(ctx, potential, detector_objs):
 	"""Probe.scan over the lamella with the requested detectors.
 
 	Returns a list ``[per-detector measurement]`` in the same order as
@@ -107,7 +107,7 @@ def _run_scan(ctx, potential, detector_objs):
 	return list(raw)
 
 
-def _run_diffraction(ctx, potential):
+def run_diffraction(ctx, potential):
 	"""Plane-wave multislice → diffraction patterns. Returns a CPU-side
 	per-snapshot pattern (no ensemble averaging — that's the aggregator's
 	job, since this worker handles a single seed)."""
@@ -123,7 +123,7 @@ def _run_diffraction(ctx, potential):
 	).compute().to_cpu()
 
 
-def _run_cbed(ctx, potential):
+def run_cbed(ctx, potential):
 	"""Probe-at-center CBED. Returns a CPU-side per-snapshot pattern."""
 	probe = add_probe(ctx, potential)
 
@@ -223,20 +223,20 @@ def run_one_seed(job_dir, todo_path) -> None:
 	# 6) Optional plane-wave diffraction. Write .zarr too — the aggregator
 	#    means seed_*_<channel>.zarr across seeds; .tif is for eyeballing.
 	if ctx.do_diffraction:
-		diff = _run_diffraction(ctx, potential)
+		diff = run_diffraction(ctx, potential)
 		diff.to_tiff(str(out_dir / f"seed_{seed:06d}_diff.tif"))
 		diff.to_zarr(str(out_dir / f"seed_{seed:06d}_diff.zarr"), overwrite=True)
 
 	# 7) Optional CBED.
 	if ctx.do_cbed:
-		cbed = _run_cbed(ctx, potential)
+		cbed = run_cbed(ctx, potential)
 		cbed.to_tiff(str(out_dir / f"seed_{seed:06d}_cbed.tif"))
 		cbed.to_zarr(str(out_dir / f"seed_{seed:06d}_cbed.zarr"), overwrite=True)
 
 	# 8) Optional scan (the main per-seed output).
 	if ctx.do_full_run and ctx.detectors:
 		detector_objs = _detector_objects(ctx, ctx.detectors)
-		measurements = _run_scan(ctx, potential, detector_objs)
+		measurements = run_scan(ctx, potential, detector_objs)
 		for det_name, m in zip(ctx.detectors, measurements):
 			cpu = m.copy().to_cpu()
 			cpu.to_tiff(str(out_dir / f"seed_{seed:06d}_{det_name}.tif"))
