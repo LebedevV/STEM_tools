@@ -13,6 +13,11 @@ channel (``seed_*_potproj``) means to a phonon-averaged projection preview, so
 it reflects the potentials actually propagated through; setting
 ``simulations.emit_static_baseline`` adds a separate static-lattice projection.
 
+Diff and CBED channels also get a matplotlib PNG preview alongside the
+``.tif``/``.zarr``, mirroring the legacy in-process pipeline's
+``plot_diffraction`` / ``plot_cbed`` output so the worker pipeline is the
+single producer of those previews.
+
 Cleans up ``outputs/`` unless ``simulations.test_enabled`` is true.
 
 CLI:
@@ -53,15 +58,14 @@ def _mean_zarr_channel(out_dir: Path, channel_name: str):
 	return mean.compute() if hasattr(mean, "compute") else mean
 
 
-def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs: bool) -> None:
-	"""Aggregate one channel; write {channel}.{tif,zarr} (+ blurred TIFFs if requested)."""
+def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs: bool):
+	"""Aggregate one channel; write {channel}.{tif,zarr} (+ blurred TIFFs if
+	requested) and return the cross-seed mean (or None if no seeds produced
+	this channel — used for "no data, skip"; an abtem read/stack/mean error
+	would raise, not return None)."""
 	mean = _mean_zarr_channel(out_dir, channel_name)
 	if mean is None:
-		# None == no seed_*_<channel>.zarr files exist for this channel
-		# (nothing was produced for it). An abtem read/stack/mean error would
-		# raise, not return None — so this is a "no data, skip" guard, not
-		# silent error-swallowing.
-		return
+		return None
 
 	mean.to_tiff(str(agg_dir / f"{channel_name}.tif"))
 	mean.to_zarr(str(agg_dir / f"{channel_name}.zarr"), overwrite=True)
@@ -72,9 +76,17 @@ def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs
 			tag = str(sigma).replace(".", "-")
 			blurred = mean.gaussian_filter(sigma, boundary="constant")
 			blurred.to_tiff(str(agg_dir / f"{channel_name}_{tag}.tif"))
+	return mean
 
 
-def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, title_suffix: str) -> None:
+def _suptitle(cfg, kind_label: str) -> str:
+	"""Common matplotlib suptitle for aggregate previews: ``sample, sg [hkl] — <kind>``."""
+	sg = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith('.cif') else cfg.job.phase
+	hkl = "".join(str(x) for x in cfg.job.hkl_list[0])
+	return f"{cfg.paths.sample_name}, {sg} [{hkl}] — {kind_label}"
+
+
+def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, kind_label: str) -> None:
 	"""Write a projected-potential preview from an already-computed projection
 	``proj`` (an ``Images``) and a ``probe`` for the side panel. Saves:
 	  - ``<stem>.png``          side-by-side projection + probe shape
@@ -84,8 +96,7 @@ def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, title_suffix: 
 	fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 4))
 	proj.show(cmap="magma", figsize=(4, 4), title="Projected Electrostatic Potential", ax=ax1)
 	probe.show(figsize=(4, 4), title="Real Space Probe", ax=ax2)
-	sg = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith('.cif') else cfg.job.phase
-	fig.suptitle(f"{cfg.paths.sample_name}, {sg} — {title_suffix}", fontsize=18)
+	fig.suptitle(_suptitle(cfg, kind_label), fontsize=18)
 	fig.tight_layout()
 	fig.savefig(str(agg_dir / f"{stem}.png"), dpi=600)
 	plt.close(fig)
@@ -96,6 +107,22 @@ def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, title_suffix: 
 	borders = cfg.lamella_settings.borders
 	proj_cropped = proj.crop([scan_s, scan_s], offset=(borders, borders))
 	proj_cropped.to_tiff(str(agg_dir / f"{stem}_scanned.tif"))
+
+
+def _write_pattern_preview(measurement, cfg, agg_dir: Path, stem: str,
+		kind_label: str, *, figsize: tuple[float, float]) -> None:
+	"""Matplotlib PNG preview for a 2D diffraction-style measurement (averaged
+	plane-wave diffraction or CBED). Mirrors the legacy plot_diffraction /
+	plot_cbed visual style so the worker pipeline produces an equivalent
+	figure."""
+	measurement.show(
+		explode=False, power=0.2, units="mrad",
+		figsize=figsize, cbar=True, common_color_scale=True,
+	)
+	fig = plt.gcf()
+	fig.suptitle(_suptitle(cfg, kind_label), y=1.005)
+	fig.savefig(str(agg_dir / f"{stem}.png"), dpi=600)
+	plt.close(fig)
 
 
 # --------------------------------------------------------------------------- #
@@ -116,8 +143,8 @@ def aggregate_job(job_dir) -> None:
 		3. For each scan detector in ``ctx.detectors``: mean per-seed
 		   ``outputs/seed_*_<det>.zarr`` into ``aggregate/<det>.{tif,zarr}``,
 		   plus three gaussian-blurred TIFF variants.
-		4. If ``do_diffraction``: same for ``diff``.
-		5. If ``do_cbed``: same for ``cbed``.
+		4. If ``do_diffraction``: same for ``diff``, plus a ``diff.png`` preview.
+		5. If ``do_cbed``: same for ``cbed``, plus a ``cbed.png`` preview.
 		6. Mean ``seed_*_potproj.zarr`` into the phonon-averaged projection
 		   preview; if ``emit_static_baseline``, also a separate static one.
 		7. Delete ``outputs/`` unless ``simulations.test_enabled``.
@@ -163,11 +190,15 @@ def aggregate_job(job_dir) -> None:
 
 	# 2. Plane-wave diffraction
 	if ctx.do_diffraction:
-		_emit_channel(out_dir, agg_dir, "diff", with_blurs=False)
+		diff_mean = _emit_channel(out_dir, agg_dir, "diff", with_blurs=False)
+		if diff_mean is not None:
+			_write_pattern_preview(diff_mean, cfg, agg_dir, "diff", "diffraction", figsize=(10, 6))
 
 	# 3. CBED
 	if ctx.do_cbed:
-		_emit_channel(out_dir, agg_dir, "cbed", with_blurs=False)
+		cbed_mean = _emit_channel(out_dir, agg_dir, "cbed", with_blurs=False)
+		if cbed_mean is not None:
+			_write_pattern_preview(cbed_mean, cfg, agg_dir, "cbed", "CBED", figsize=(8, 6))
 
 	# 4. Projected potential preview(s). Default is the phonon-averaged
 	#    projection: the mean of each seed's seed_*_potproj.zarr, i.e. the
@@ -184,14 +215,14 @@ def aggregate_job(job_dir) -> None:
 
 		if mean_proj is not None:
 			_write_projection(mean_proj, probe, cfg, agg_dir,
-				"potential_projection", "phonon-averaged")
+				"potential_projection", "phonon-averaged projection")
 
 		# emit_static_baseline: a separate static-lattice projection, kept on
 		# its own and never averaged with the per-seed runs.
 		if cfg.simulations.emit_static_baseline:
 			static_proj = static_potential.project().to_cpu().compute()
 			_write_projection(static_proj, probe, cfg, agg_dir,
-				"potential_projection_static", "static lattice")
+				"potential_projection_static", "static lattice projection")
 
 	# 5. Cleanup unless test mode is on
 	if not ctx.test_enabled:
