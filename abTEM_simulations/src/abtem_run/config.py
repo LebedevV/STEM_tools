@@ -92,8 +92,11 @@ class Simulations(BaseModel):
 
 class Microscope(BaseModel):
 	HT_value: int | list[int ] = Field()
-	# Plane-wave diffraction via PlaneWave.multislice. Default off because in
-	# the worker era it's per-seed (N PlaneWave multislices when sigma>0).
+	# Plane-wave diffraction (PlaneWave.multislice -> exit wave -> pattern).
+	# Default OFF: in the worker era it runs once PER SEED, so frozen_phonons=N
+	# means N extra plane-wave multislices on top of the scan — a real cost to
+	# opt into, not pay silently. (Legacy ran it just twice: static + the fph
+	# ensemble, via abtem's internal averaging.)
 	do_diffraction: bool = Field(default=False)
 	# Convergent-beam diffraction via Probe.multislice at one position. Split
 	# out of do_diffraction in the worker era so they gate independently.
