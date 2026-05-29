@@ -24,12 +24,6 @@ def _now_utc_compact() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _atomic_write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
-
 def _phase_stem(phase: str) -> str:
     phase = str(phase)
     if phase.lower().endswith(".cif"):
@@ -49,12 +43,6 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".json.tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     os.replace(tmp, path)
-
-
-def _cfg_to_dict(cfg) -> dict[str, Any]:
-    if hasattr(cfg, "model_dump"):  # pydantic v2
-        return cfg.model_dump()
-    return cfg.dict()  # pydantic v1 fallback
 
 
 def _seed_list_from_cfg(cfg_dict: dict[str, Any]) -> list[int]:
@@ -85,10 +73,6 @@ def _tilt_str(cfg_dict: dict[str, Any]) -> str:
     b = float(ls["global_tilt_b"])
     # stable, filesystem-friendly
     return f"ta{a}_tb{b}".replace(" ", "")
-
-
-def _hkl_str(hkl: list[int]) -> str:
-    return "".join(str(x) for x in hkl)
 
 
 def _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
@@ -158,7 +142,7 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
     }
 
     for frame_idx, cfg_frame in enumerate(frames):
-        cfg_dict = _cfg_to_dict(cfg_frame)
+        cfg_dict = cfg_frame.model_dump()
 
         phase = str(cfg_dict["job"]["phase"])
         phase_name = _phase_stem(phase)
@@ -169,7 +153,7 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
 
         # For each HKL, create an independent "job folder"
         for hkl in hkls:
-            line_hkl = _hkl_str(hkl)
+            line_hkl = "".join(str(x) for x in hkl)
 
             # This is the naming analogue of: f"{sg}_{line_hkl}_{ctx.global_tilt}.toml"
             # We use (phase, line_hkl, tilt) because sg isn't known until CIF is parsed.
@@ -192,9 +176,13 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
             # Planning artifacts: surf.xyz + combined.png. Cheap, no GPU.
             _emit_planning_artifacts(cfg_frame, hkl, line_hkl, job_dir)
 
-            # Create one .todo per seed (or seed 0 baseline if no phonons)
+            # Create one .todo per seed (or seed 0 baseline if no phonons).
+            # Atomic write via tmp + os.replace; seeds/ already exists.
             for s in seeds:
-                _atomic_write_text(job_dir / "seeds" / f"seed_{s:06d}.todo", f"{s}\n")
+                todo = job_dir / "seeds" / f"seed_{s:06d}.todo"
+                tmp = todo.with_suffix(todo.suffix + ".tmp")
+                tmp.write_text(f"{s}\n", encoding="utf-8")
+                os.replace(tmp, todo)
 
             manifest["jobs"].append(
                 {
