@@ -44,11 +44,6 @@ from .worker import _build_lamella, _build_potential
 # --------------------------------------------------------------------------- #
 
 
-def _phase_stem(phase: str) -> str:
-	phase = str(phase)
-	return phase[:-4] if phase.lower().endswith(".cif") else phase
-
-
 def _mean_zarr_channel(out_dir: Path, channel_name: str):
 	"""Mean ``seed_*_<channel_name>.zarr`` across seeds.
 
@@ -108,7 +103,8 @@ def _emit_potential_projection(ctx, cfg, agg_dir: Path) -> None:
 	fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 4))
 	proj.show(cmap="magma", figsize=(4, 4), title="Projected Electrostatic Potential", ax=ax1)
 	probe.show(figsize=(4, 4), title="Real Space Probe", ax=ax2)
-	fig.suptitle(f"{cfg.paths.sample_name}, {_phase_stem(cfg.job.phase)}", fontsize=18)
+	sg = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith('.cif') else cfg.job.phase
+	fig.suptitle(f"{cfg.paths.sample_name}, {sg}", fontsize=18)
 	fig.tight_layout()
 	fig.savefig(str(agg_dir / "potential_projection.png"), dpi=600)
 	plt.close(fig)
