@@ -11,8 +11,7 @@ the worker landed, that in-process path was renamed to `pipeline.py`.)
 
 ## Background
 
-The pipeline naturally decomposes into three checkpoints (see V. Lebedev's
-intent for the architecture):
+The pipeline naturally decomposes into three checkpoints:
 
 1. **Atomic coordinates** `(x0, y0, z0)` — deterministic, from the TOML.
 2. **Per-phonon displacements** `{xi, yi, zi}` — random, must be strictly
@@ -103,9 +102,9 @@ FrozenPhonons(num_configs=1, sigmas=0, seed=anything)
 # is identical to the input atoms (zero displacement)
 ```
 
-The dual code path is a redundancy that V. flagged in his own README
-TODO ("first frame is simulated separately from frozen phonons, and
-this simulation is just repeated later on. maybe add a flag?").
+The dual code path is a redundancy flagged in the README TODO ("first
+frame is simulated separately from frozen phonons, and this simulation
+is just repeated later on. maybe add a flag?").
 
 #### Three options were considered
 
@@ -125,7 +124,7 @@ Users who want the static-lattice baseline write a config with
 one snapshot with zero displacement, byte-equivalent to today's
 `add_potential(surf)` output.
 
-Pros: smallest worker; aligned with V.'s "maybe add a flag" intent;
+Pros: smallest worker; aligned with the "maybe add a flag" README TODO;
 single coherent mental model.
 Cons: the BF/no-BF detector asymmetry is no longer hardcoded — must be
 reconstructed via config.
@@ -322,9 +321,8 @@ The flag has two effects, both gated on it being `true`:
 | Skip cleanup of `outputs/` | aggregator | per-seed `outputs/seed_NNNNNN_*.{zarr,tif}` stay on disk after `aggregate/` is produced |
 | Dump per-seed displaced atoms | worker | `outputs/seed_NNNNNN_displaced.xyz` — the post-displacement atom positions for that snapshot |
 
-The displaced `.xyz` is V.'s "checkpoint 2 explicit on disk" — today
-the displaced atoms exist only in memory inside the FrozenPhonons
-ensemble. With the flag on, every snapshot's atom positions become an
+The displaced `.xyz` is "checkpoint 2 explicit on disk" — today the
+displaced atoms exist only in memory inside the FrozenPhonons ensemble. With the flag on, every snapshot's atom positions become an
 inspectable artifact.
 
 #### What the three checkpoints look like on disk
