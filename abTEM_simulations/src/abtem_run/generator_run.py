@@ -130,9 +130,8 @@ def _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir: Path) -> None
 def _emit_planning_artifacts(cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
     """Build the lamella and emit surf.xyz + combined.png at planning time.
 
-    Per docs/worker.md decision #5: cheap (matplotlib + ase + dask CPU,
-    no GPU multislice), useful as a sanity check before committing GPU
-    time to the workers.
+    Cheap (matplotlib + ase + dask CPU, no GPU multislice), useful as a
+    sanity check before committing GPU time to the workers.
     """
     lamella = build_lamella_from_config(cfg_frame, hkl)
     ase.io.write(str(job_dir / "surf.xyz"), lamella, "xyz")
@@ -191,7 +190,6 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
             _atomic_write_toml(cfg_out_path, job_cfg_dict)
 
             # Planning artifacts: surf.xyz + combined.png. Cheap, no GPU.
-            # See docs/worker.md decision #5.
             _emit_planning_artifacts(cfg_frame, hkl, line_hkl, job_dir)
 
             # Create one .todo per seed (or seed 0 baseline if no phonons)

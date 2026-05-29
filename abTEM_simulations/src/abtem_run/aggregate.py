@@ -20,8 +20,6 @@ CLI:
 Library:
     from abtem_run.aggregate import aggregate_job
     aggregate_job(job_dir)
-
-Design rationale lives in ``docs/worker.md`` (decisions #4 and #5).
 """
 import argparse
 import shutil

@@ -21,9 +21,8 @@ Library entry:
     from abtem_run.worker import run_one_seed
     run_one_seed(job_dir, todo_path)
 
-Design notes: see ``docs/worker.md``. In particular, every seed goes
-through the same code path — there is no special "static lattice"
-branch. To produce a static-lattice result, configure
+Every seed goes through the same code path — there is no special
+"static lattice" branch. To produce a static-lattice result, configure
 ``fph_sigma = false`` and ``frozen_phonons = 1``; the worker will run
 with zero displacement.
 """
