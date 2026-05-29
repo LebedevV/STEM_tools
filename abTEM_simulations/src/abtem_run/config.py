@@ -76,10 +76,14 @@ class Simulations(BaseModel):
 	override_sampling: float | bool = Field()
 	frozen_phonons: int | str | list[int | str] = Field() #str meant to be only 'None'
 	fph_sigma: float | bool | str | list[float | bool | str] = Field() #bool meant to be converted to None
+	# do_full_run=true: run the per-seed scan (probe.scan over the detectors).
+	# False -> a worker still runs (diffraction/CBED if enabled, potential
+	# build) but skips the scan channels. Gates WHICH per-seed outputs.
 	do_full_run: bool = Field()
-	# dry_run=true: build the lamella, write the per-job TOML + planning
-	# artifacts, then stop. Skips potential construction and all multislice.
-	# Useful for validating sweep expansion / atom layout without GPU time.
+	# dry_run=true: plan only — stop after the generator (planning lamella +
+	# surf.xyz + combined.png); NO workers run, NO multislice at all. Useful
+	# for validating sweep expansion / atom layout without GPU time. Differs
+	# from do_full_run, which gates just the scan inside a worker that DOES run.
 	dry_run: bool = Field(default=False)
 	# test_enabled=true: aggregator keeps outputs/ intact instead of deleting
 	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
