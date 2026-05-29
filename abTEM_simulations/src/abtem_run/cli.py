@@ -25,7 +25,6 @@ import sys
 from pathlib import Path
 
 from .aggregate import aggregate_job
-from .config import load_config
 from .generator_run import generate_run
 from .worker import run_one_seed
 
@@ -39,34 +38,29 @@ def run_pipeline(config_path, *, generate_only: bool = False) -> Path:
 	Args:
 		config_path: path to the TOML config (absolute or CWD-relative).
 		generate_only: if True, run the generator and stop (no workers,
-		               no aggregator). Equivalent in effect to setting
-		               ``simulations.dry_run = true`` in the config.
+		               no aggregator).
 
 	Returns:
 		Path to the generated ``gen_<UTC>/`` run directory.
 
 	Behavior:
-		1. Read the config (honoring ``simulations.dry_run``).
-		2. Call ``generate_run(config_path)`` — emits the job tree with
-		   per-job TOMLs, planning artifacts (surf.xyz + combined.png),
-		   and per-seed .todo files.
-		3. If ``generate_only`` or ``cfg.simulations.dry_run``: return.
-		4. For each job dir: iterate ``seeds/*.todo`` in order, calling
+		1. Call ``generate_run(config_path)`` — reads + validates the
+		   config and emits the job tree with per-job TOMLs, planning
+		   artifacts (surf.xyz + combined.png), and per-seed .todo files.
+		2. If ``generate_only``: return.
+		3. For each job dir: iterate ``seeds/*.todo`` in order, calling
 		   ``run_one_seed`` for each. Workers atomically rename
 		   .todo -> .done.
-		5. For each job dir: call ``aggregate_job`` to mean per-seed
+		4. For each job dir: call ``aggregate_job`` to mean per-seed
 		   outputs into ``aggregate/`` (and clean up ``outputs/`` unless
 		   ``simulations.test_enabled`` is set).
 	"""
-	cfg = load_config(config_path)
-
 	print(f"abtem-run: generating queue from {config_path}")
 	run_dir = generate_run(config_path)
 	print(f"abtem-run: queue at {run_dir}")
 
-	if generate_only or cfg.simulations.dry_run:
-		reason = "--generate-only" if generate_only else "simulations.dry_run=true"
-		print(f"abtem-run: stopping after generation ({reason}).")
+	if generate_only:
+		print("abtem-run: stopping after generation (--generate-only).")
 		return run_dir
 
 	job_dirs = sorted(p for p in run_dir.iterdir() if p.is_dir())
@@ -104,10 +98,7 @@ def main():
 	parser.add_argument(
 		"--generate-only",
 		action="store_true",
-		help=(
-			"plan + emit planning artifacts only; skip workers and "
-			"aggregation. Same effect as simulations.dry_run=true."
-		),
+		help="plan + emit planning artifacts only; skip workers and aggregation.",
 	)
 	args = parser.parse_args()
 	run_pipeline(args.config, generate_only=args.generate_only)

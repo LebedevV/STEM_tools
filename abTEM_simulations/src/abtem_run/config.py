@@ -77,8 +77,6 @@ class Simulations(BaseModel):
 	frozen_phonons: int | str | list[int | str] = Field() #str meant to be only 'None'
 	fph_sigma: float | bool | str | list[float | bool | str] = Field() #bool meant to be converted to None
 	do_full_run: bool = Field()  # run the per-seed scan (probe.scan)
-	# stop after the generator (plan + artifacts), run no workers
-	dry_run: bool = Field(default=False)
 	# test_enabled=true: aggregator keeps outputs/ intact instead of deleting
 	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
 	test_enabled: bool = Field(default=False)

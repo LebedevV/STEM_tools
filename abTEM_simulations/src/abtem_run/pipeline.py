@@ -35,7 +35,6 @@ class RunContext:
 	do_diffraction: bool
 	do_cbed: bool
 	detectors: list[str]
-	dry_run: bool
 	test_enabled: bool
 	override_sampling: float | bool
 
@@ -120,7 +119,6 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 	do_diffraction = cfg.microscope.do_diffraction
 	do_cbed = cfg.microscope.do_cbed
 	detectors = cfg.microscope.detectors
-	dry_run = cfg.simulations.dry_run
 	test_enabled = cfg.simulations.test_enabled
 	override_sampling = cfg.simulations.override_sampling
 
@@ -195,7 +193,6 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		do_diffraction=do_diffraction,
 		do_cbed=do_cbed,
 		detectors=detectors,
-		dry_run=dry_run,
 		test_enabled=test_enabled,
 		override_sampling=override_sampling,
 		scan_start=scan_start,

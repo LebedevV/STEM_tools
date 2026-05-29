@@ -35,8 +35,6 @@ fph_sigma = 0.1#0.25#0.1 #A;
 override_sampling = false
 do_full_run = true
 
-#dry_run = true: plan + planning artifacts only, no multislice
-dry_run = false
 #test_enabled = true: keep per-seed outputs/ and dump displaced .xyz per seed
 test_enabled = false
 
