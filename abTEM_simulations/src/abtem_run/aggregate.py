@@ -72,6 +72,10 @@ def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs
 	"""Aggregate one channel; write {channel}.{tif,zarr} (+ blurred TIFFs if requested)."""
 	mean = _mean_zarr_channel(out_dir, channel_name)
 	if mean is None:
+		# None == no seed_*_<channel>.zarr files exist for this channel
+		# (nothing was produced for it). An abtem read/stack/mean error would
+		# raise, not return None — so this is a "no data, skip" guard, not
+		# silent error-swallowing.
 		return
 
 	mean.to_tiff(str(agg_dir / f"{channel_name}.tif"))
