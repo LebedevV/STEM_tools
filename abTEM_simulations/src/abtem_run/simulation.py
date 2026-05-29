@@ -413,6 +413,40 @@ def add_vacancies(surf,el,prob,seed=0):
 	mask = (at_types == el) & (rng.random(len(at_types)) < prob)
 	return surf[~mask]
 
+def build_lamella_from_config(cfg, hkl):
+	'''
+	Static (no-displacement) lamella for one (phase, hkl) from a resolved
+	AppConfig + a single hkl. Single source of truth for the geometry, shared
+	by the generator (planning artifacts), the worker (per-seed ground state)
+	and the aggregator (projection preview).
+	'''
+	ls = cfg.lamella_settings
+	lamella_sizes = (ls.borders * 2 + ls.scan_s, ls.borders * 2 + ls.scan_s, float(ls.thickness))
+	lamella = make_lamella(
+		cfg.paths.folder + cfg.job.phase,
+		hkl,
+		ls.sblock_size,
+		lamella_sizes,
+		ls.atom_to_zero,
+		ls.tol,
+		ls.max_uvw,
+		is_uvw=cfg.job.is_uvw,
+		inplane_angle=cfg.job.inplane_angle_resolved,
+		extra_shift_z=ls.extra_shift_z,
+		vac_xy=ls.borders,
+		vac_z=ls.borders,
+		global_tilt=(float(ls.global_tilt_a), float(ls.global_tilt_b)),
+		tilt_degrees=ls.tilt_degrees,
+	)
+	if ls.add_vacancies_toggle:
+		lamella = add_vacancies(
+			lamella,
+			ls.element_to_remove,
+			float(ls.probability_of_vac),
+			seed=ls.vacancies_seed,
+		)
+	return lamella
+
 #Previews plot
 def plot_dataset(data,ctx,is_uvw):
 	'''

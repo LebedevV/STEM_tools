@@ -17,7 +17,7 @@ import tomli_w
 
 from . import config as confread
 from .pipeline import expand_cfg
-from .simulation import add_vacancies, make_lamella
+from .simulation import build_lamella_from_config
 
 
 def _now_utc_compact() -> str:
@@ -91,45 +91,6 @@ def _hkl_str(hkl: list[int]) -> str:
     return "".join(str(x) for x in hkl)
 
 
-def _build_planning_lamella(cfg_frame, hkl):
-    """Build the lamella for one (phase, hkl, tilt) job — same parameters
-    the worker will use. Static (no phonon displacement). Used to emit the
-    surf.xyz and combined.png planning artifacts before any worker runs.
-    """
-    ls = cfg_frame.lamella_settings
-    job = cfg_frame.job
-    borders = ls.borders
-    scan_s = ls.scan_s
-    thickness = float(ls.thickness)
-    lamella_sizes = (borders * 2 + scan_s, borders * 2 + scan_s, thickness)
-
-    cif_path = cfg_frame.paths.folder + job.phase
-    lamella = make_lamella(
-        cif_path,
-        hkl,
-        ls.sblock_size,
-        lamella_sizes,
-        ls.atom_to_zero,
-        ls.tol,
-        ls.max_uvw,
-        is_uvw=job.is_uvw,
-        inplane_angle=job.inplane_angle_resolved,
-        extra_shift_z=ls.extra_shift_z,
-        vac_xy=borders,
-        vac_z=borders,
-        global_tilt=(float(ls.global_tilt_a), float(ls.global_tilt_b)),
-        tilt_degrees=ls.tilt_degrees,
-    )
-    if ls.add_vacancies_toggle:
-        lamella = add_vacancies(
-            lamella,
-            ls.element_to_remove,
-            float(ls.probability_of_vac),
-            seed=ls.vacancies_seed,
-        )
-    return lamella
-
-
 def _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
     """3-panel atom view (XY / XZ / YZ) with the scan box overlaid on XY.
     Cheap — no GPU, no abtem multislice. Just matplotlib + ase + abtem.show_atoms.
@@ -173,7 +134,7 @@ def _emit_planning_artifacts(cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
     no GPU multislice), useful as a sanity check before committing GPU
     time to the workers.
     """
-    lamella = _build_planning_lamella(cfg_frame, hkl)
+    lamella = build_lamella_from_config(cfg_frame, hkl)
     ase.io.write(str(job_dir / "surf.xyz"), lamella, "xyz")
     _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir)
 

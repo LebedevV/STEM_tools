@@ -37,7 +37,7 @@ import numpy as np
 
 from .config import load_config
 from .pipeline import make_potential, resolve_context
-from .simulation import add_probe, add_scan, add_vacancies, make_lamella
+from .simulation import add_probe, add_scan, build_lamella_from_config
 
 
 # --------------------------------------------------------------------------- #
@@ -75,41 +75,6 @@ def _displaced_atoms(atoms, sigmas, seed: int):
 		atoms, num_configs=1, sigmas=float(sigmas), seed=int(seed)
 	)
 	return fph.to_atoms_ensemble().trajectory[0]
-
-
-def _build_lamella(ctx, cfg):
-	"""Build the static (no displacement) lamella for this job's (phase, hkl).
-
-	The job's TOML carries a single phase + single hkl after generator-time
-	expansion. If the user wants multiple hkls per phase, the generator
-	emits separate job dirs — the worker doesn't have to iterate.
-	"""
-	cif_path = ctx.folder + cfg.job.phase
-	hkl = cfg.job.hkl_list[0]
-	lamella = make_lamella(
-		cif_path,
-		hkl,
-		cfg.lamella_settings.sblock_size,
-		ctx.lamella_sizes,
-		cfg.lamella_settings.atom_to_zero,
-		cfg.lamella_settings.tol,
-		cfg.lamella_settings.max_uvw,
-		is_uvw=cfg.job.is_uvw,
-		inplane_angle=cfg.job.inplane_angle_resolved,
-		extra_shift_z=cfg.lamella_settings.extra_shift_z,
-		vac_xy=cfg.lamella_settings.borders,
-		vac_z=cfg.lamella_settings.borders,
-		global_tilt=ctx.global_tilt,
-		tilt_degrees=ctx.tilt_degrees,
-	)
-	if cfg.lamella_settings.add_vacancies_toggle:
-		lamella = add_vacancies(
-			lamella,
-			cfg.lamella_settings.element_to_remove,
-			cfg.lamella_settings.probability_of_vac,
-			seed=cfg.lamella_settings.vacancies_seed,
-		)
-	return lamella
 
 
 def _detector_objects(ctx, names):
@@ -226,7 +191,7 @@ def run_one_seed(job_dir, todo_path) -> None:
 	out_dir.mkdir(parents=True, exist_ok=True)
 
 	# 1) Static (deterministic) lamella from cfg.job + cfg.lamella_settings.
-	lamella = _build_lamella(ctx, cfg)
+	lamella = build_lamella_from_config(cfg, cfg.job.hkl_list[0])
 
 	# 2) Per-seed phonon displacement.
 	displaced = _displaced_atoms(lamella, ctx.fph_sigma, seed)
