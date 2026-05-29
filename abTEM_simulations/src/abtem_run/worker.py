@@ -112,12 +112,6 @@ def _build_lamella(ctx, cfg):
 	return lamella
 
 
-def _build_potential(atoms):
-	"""Eagerly build + materialize a Potential from already-displaced atoms,
-	using pipeline.make_potential's standard params (single source of truth)."""
-	return make_potential(atoms).build().compute()
-
-
 def _detector_objects(ctx, names):
 	"""Map ``["haadf", "abf", "bf"]`` → the AnnularDetector instances on ctx.
 
@@ -247,7 +241,7 @@ def run_one_seed(job_dir, todo_path) -> None:
 		)
 
 	# 4) Build the per-seed Potential.
-	potential = _build_potential(displaced)
+	potential = make_potential(displaced).build().compute()
 
 	# 5) Optional plane-wave diffraction. Write .zarr too — the aggregator
 	#    means seed_*_<channel>.zarr across seeds; .tif is for eyeballing.

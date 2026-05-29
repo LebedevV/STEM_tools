@@ -32,11 +32,11 @@ import abtem
 import matplotlib.pyplot as plt
 
 from .config import load_config
-from .pipeline import BLUR_SIGMAS, resolve_context
+from .pipeline import BLUR_SIGMAS, make_potential, resolve_context
 from .simulation import add_probe
 # These two helpers live in worker.py as package-internal building blocks; we
 # import them rather than duplicate the lamella/Potential construction logic.
-from .worker import _build_lamella, _build_potential
+from .worker import _build_lamella
 
 
 # --------------------------------------------------------------------------- #
@@ -178,7 +178,7 @@ def aggregate_job(job_dir) -> None:
 
 	# 4. Static-lattice projected potential preview (build the ground-state
 	#    potential once, here, and hand it to the writer).
-	static_potential = _build_potential(_build_lamella(ctx, cfg))
+	static_potential = make_potential(_build_lamella(ctx, cfg)).build().compute()
 	_emit_potential_projection(ctx, cfg, static_potential, agg_dir)
 
 	# 5. Cleanup unless test mode is on
