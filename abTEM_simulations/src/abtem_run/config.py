@@ -81,8 +81,13 @@ class Simulations(BaseModel):
 	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
 	test_enabled: bool = Field(default=False)
 	# emit_static_baseline=true: also emit a separate static-lattice (no
-	# phonons) projected-potential reference, kept apart from the phonon-
-	# averaged result. (Reserved to also gate a static-lattice scan baseline.)
+	# phonons) reference, kept apart from the phonon-averaged result. Gates
+	# both: (a) a static-lattice projected-potential preview
+	# (aggregate/potential_projection_static.*) alongside the phonon-averaged
+	# projection, and (b) ONE extra static-lattice scan per job
+	# (aggregate/<det>_static.{tif,zarr}). The scan path is one additional
+	# multislice per job regardless of seed count; diffraction/CBED static
+	# baselines are not produced (out of scope).
 	emit_static_baseline: bool = Field(default=False)
 	# Boundary mode for the post-aggregation gaussian-blur TIFF variants.
 	# Default 'nearest' (extends edge values outward) replaces the older

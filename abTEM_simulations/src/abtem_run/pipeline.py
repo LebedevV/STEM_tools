@@ -30,6 +30,7 @@ class RunContext:
 	detectors: list[str]
 	test_enabled: bool
 	blur_boundary: str
+	emit_static_baseline: bool
 	override_sampling: float | bool
 
 	# resolved lamella geometry
@@ -111,6 +112,7 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 	detectors = cfg.microscope.detectors
 	test_enabled = cfg.simulations.test_enabled
 	blur_boundary = cfg.simulations.blur_boundary
+	emit_static_baseline = cfg.simulations.emit_static_baseline
 	override_sampling = cfg.simulations.override_sampling
 
 	borders = cfg.lamella_settings.borders
@@ -186,6 +188,7 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		detectors=detectors,
 		test_enabled=test_enabled,
 		blur_boundary=blur_boundary,
+		emit_static_baseline=emit_static_baseline,
 		override_sampling=override_sampling,
 		scan_start=scan_start,
 		scan_stop=scan_stop,
