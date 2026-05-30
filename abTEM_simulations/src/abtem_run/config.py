@@ -76,11 +76,25 @@ class Simulations(BaseModel):
 	override_sampling: float | bool = Field()
 	frozen_phonons: int | str | list[int | str] = Field() #str meant to be only 'None'
 	fph_sigma: float | bool | str | list[float | bool | str] = Field() #bool meant to be converted to None
-	do_full_run: bool = Field()
+	do_full_run: bool = Field()  # run the per-seed scan (probe.scan)
+	# test_enabled=true: aggregator keeps outputs/ intact instead of deleting
+	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
+	test_enabled: bool = Field(default=False)
+	# emit_static_baseline=true: also emit a separate static-lattice (no
+	# phonons) projected-potential reference, kept apart from the phonon-
+	# averaged result. (Reserved to also gate a static-lattice scan baseline.)
+	emit_static_baseline: bool = Field(default=False)
 
 class Microscope(BaseModel):
 	HT_value: int | list[int ] = Field()
-	do_diffraction: bool = Field()
+	# Plane-wave diffraction pattern, per seed. Optional extra output; off by default.
+	do_diffraction: bool = Field(default=False)
+	# Convergent-beam diffraction via Probe.multislice at one position. Split
+	# out of do_diffraction in the worker era so they gate independently.
+	do_cbed: bool = Field(default=False)
+	# Which detectors to compute in probe.scan; subset of {haadf, abf, bf}.
+	# Default all three.
+	detectors: list[str] = Field(default_factory=lambda: ["haadf", "abf", "bf"])
 	convergence_angle: float = Field(default=30.0)   # mrad
 	cbed_max_angle: float | str = Field(default="valid")
 	haadfinner: float = Field()
@@ -89,7 +103,28 @@ class Microscope(BaseModel):
 	abfouter: float = Field()
 	bfinner: float = Field()
 	bfouter: float = Field()
-	
+
+	@field_validator("detectors")
+	@classmethod
+	def validate_detectors(cls, v: Any):
+		"""Normalize to lowercase, de-duplicate, reject anything outside {haadf, abf, bf}."""
+		if not isinstance(v, list):
+			raise ValueError("detectors must be a list of strings")
+		allowed = {"haadf", "abf", "bf"}
+		normalized = [str(s).lower() for s in v]
+		invalid = [s for s in normalized if s not in allowed]
+		if invalid:
+			raise ValueError(
+				f"unknown detector(s): {invalid}; must be a subset of {sorted(allowed)}"
+			)
+		seen: set[str] = set()
+		out = []
+		for s in normalized:
+			if s not in seen:
+				seen.add(s)
+				out.append(s)
+		return out
+
 class LamellaSettings(BaseModel):
 	max_uvw: int = Field()
 	sblock_size: float = Field()

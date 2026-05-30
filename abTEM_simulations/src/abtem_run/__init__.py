@@ -132,3 +132,58 @@ def _apply_all_patches() -> None:
 
 
 _apply_all_patches()
+
+
+# --------------------------------------------------------------------------- #
+# Public library API
+#
+# Re-export the most-used names so callers can do `from abtem_run import X`
+# instead of digging through submodule paths. These imports MUST come after
+# the monkey-patches above — any abtem usage triggered by the submodule
+# inits is then already patched. (Importing the package now requires abtem;
+# for schema-only use without abtem, import abtem_run.config directly.)
+# --------------------------------------------------------------------------- #
+
+from .config import AppConfig, Job, load_config
+from .simulation import (
+	add_probe,
+	add_scan,
+	add_vacancies,
+	make_lamella,
+)
+from .pipeline import (
+	RunContext,
+	expand_cfg,
+	make_potential,
+	resolve_context,
+)
+from .generator_run import generate_run
+from .worker import run_one_seed
+from .aggregate import aggregate_job
+from .cli import main, run_pipeline
+
+__all__ = [
+	# config
+	"AppConfig",
+	"Job",
+	"load_config",
+	# simulation (geometry)
+	"add_probe",
+	"add_scan",
+	"add_vacancies",
+	"make_lamella",
+	# pipeline (shared infrastructure for the worker path)
+	"RunContext",
+	"expand_cfg",
+	"make_potential",
+	"resolve_context",
+	# worker pipeline
+	"generate_run",
+	"run_one_seed",
+	"aggregate_job",
+	# convenience wrapper
+	"main",
+	"run_pipeline",
+	# diagnostics
+	"_PATCHES_APPLIED",
+]

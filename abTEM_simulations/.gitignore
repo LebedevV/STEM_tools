@@ -9,3 +9,4 @@ out_full/
 *.cif
 venv/
 .ruff_cache/
+docs/worker.md
