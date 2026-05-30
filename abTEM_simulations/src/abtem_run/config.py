@@ -111,9 +111,14 @@ class Job(BaseModel):
 	@property
 	def hkl_list(self) -> list[list[int]]:
 		"""hkl_to_do normalized to list-of-lists regardless of input shape."""
-		if len(self.hkl_to_do) == 3 and all(isinstance(x, int) for x in self.hkl_to_do):
-			return [list(self.hkl_to_do)]  # type: ignore[list-item]
-		return [list(row) for row in self.hkl_to_do]
+		# Narrow via isinstance checks instead of relying on `# type: ignore`
+		# so mypy can follow the type discrimination cleanly.
+		v = self.hkl_to_do
+		if len(v) == 3 and all(isinstance(x, int) for x in v):
+			# Flat [h,k,l]: every element is an int.
+			return [[int(x) for x in v]]  # type: ignore[arg-type]
+		# Nested [[h,k,l], ...]: every element is itself a list[int].
+		return [list(row) for row in v]  # type: ignore[arg-type]
 
 	@property
 	def inplane_angle_resolved(self) -> float | None:
