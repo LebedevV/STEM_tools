@@ -476,12 +476,78 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 	return fin_cell
 	
 
-def add_probe(ctx, potential, defocus="scherzer"):
-	probe = abtem.Probe(
+def _resolve_defocus(defocus, c30, energy):
+	"""Return ``defocus`` as a numeric value in Å. If the input is the magic
+	string 'scherzer', evaluate Scherzer's formula explicitly using the
+	provided C30 and energy. We resolve here (rather than letting abtem do
+	it via the aberrations dict) because abtem 1.0.9 reads C30 from the
+	partial state as it iterates the aberrations dict — if 'defocus' is
+	encountered before 'C30', Scherzer evaluates with the wrong (zero) C30.
+	Resolving ourselves is order-independent.
+	"""
+	if not (isinstance(defocus, str) and defocus.lower() == "scherzer"):
+		return float(defocus)
+	from abtem.transfer import scherzer_defocus
+	return float(scherzer_defocus(float(c30), float(energy)))
+
+
+def _build_probe(ctx, *, defocus_override=None):
+	"""Construct an abtem.Probe consistent with cfg.microscope across the
+	pipeline. Single source of truth for energy, semiangle_cutoff, defocus,
+	and the optional aberrations dict.
+
+	If ``ctx.defocus == 'scherzer'`` and the resolved C30 (spherical
+	aberration) is 0, Scherzer's formula evaluates to 0 — i.e. the probe is
+	in-focus with no aberrations, which produces the "BF looks like DF"
+	symptom (zero-defocus inverted-center pattern). Emit a runtime warning
+	so this can't recur silently. Set ``cfg.microscope.aberrations.C30`` to a
+	non-zero value (typical uncorrected 200 kV: 1.0e7 Å = 1 mm;
+	aberration-corrected: 1.0e4 Å = 1 μm) to get a meaningful Scherzer
+	defocus.
+
+	All abtem aberration keys (``C12``, ``C30``, ``phi12``, …) pass through
+	unchanged, so callers can configure any phase aberration abtem supports
+	via ``cfg.microscope.aberrations``.
+
+	``defocus_override`` lets explicit callers (the legacy add_probe(...,
+	defocus=N) path) supply a defocus that takes precedence over
+	ctx.defocus, without going through the scherzer-warning check.
+	"""
+	aberrations = dict(ctx.aberrations)
+	c30 = float(aberrations.get("C30", 0.0))
+	if defocus_override is None:
+		if isinstance(ctx.defocus, str) and ctx.defocus.lower() == "scherzer" and c30 == 0.0:
+			warnings.warn(
+				"microscope.defocus='scherzer' is a no-op when "
+				"microscope.aberrations.C30 is 0 (Scherzer formula evaluates "
+				"to 0). The resulting probe is in-focus with no aberrations, "
+				"which can give the 'BF looks like DF' inverted-center "
+				"artifact on thin samples. Set aberrations.C30 to a non-zero "
+				"value (typical uncorrected 200 kV: 1.0e7 Å) or set defocus "
+				"to an explicit number in Å.",
+				stacklevel=2,
+			)
+		aberrations["defocus"] = _resolve_defocus(ctx.defocus, c30, ctx.HT_value)
+	else:
+		aberrations["defocus"] = _resolve_defocus(defocus_override, c30, ctx.HT_value)
+	return abtem.Probe(
 		energy=ctx.HT_value,
 		semiangle_cutoff=ctx.convergence_angle,
-		defocus=defocus
+		aberrations=aberrations,
 	)
+
+
+def add_probe(ctx, potential, defocus=None):
+	"""Build a Probe from a RunContext + match its grid to the potential.
+
+	``defocus`` defaults to None: defocus + aberrations come from
+	``ctx.defocus`` / ``ctx.aberrations`` (the single source of truth shared
+	with the worker). Passing an explicit ``defocus=`` (float or 'scherzer')
+	keeps the pre-Q3 calling convention for external callers; the value
+	overrides ctx.defocus for that one probe, with no scherzer-with-C30=0
+	warning (the caller has stated what they want).
+	"""
+	probe = _build_probe(ctx, defocus_override=defocus)
 	probe.grid.match(potential)
 	return probe
 

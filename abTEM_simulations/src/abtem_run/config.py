@@ -12,6 +12,43 @@ from typing import Any, Literal
 import tomllib
 from pydantic import BaseModel, Field, field_validator
 
+
+# Mirror of abtem.transfer.polar_aliases (abtem 1.0.9) plus the polar symbols
+# themselves. Hardcoded so config validation doesn't have to import abtem
+# (slow, and runs the runtime monkey-patches). If abtem extends its supported
+# aberration set, mirror new symbols here. Excludes 'defocus' / 'C10' — those
+# go through the dedicated Microscope.defocus field so the 'scherzer' magic
+# stays in one place.
+_ABERRATION_NAMED = {
+	"Cs", "C5",
+	"astigmatism", "astigmatism_angle",
+	"astigmatism3", "astigmatism3_angle",
+	"astigmatism5", "astigmatism5_angle",
+	"coma", "coma_angle",
+	"coma4", "coma4_angle",
+	"trefoil", "trefoil_angle",
+	"trefoil4", "trefoil4_angle",
+	"quadrafoil", "quadrafoil_angle",
+	"quadrafoil5", "quadrafoil5_angle",
+	"pentafoil", "pentafoil_angle",
+	"hexafoil", "hexafoil_angle",
+}
+_ABERRATION_POLAR = {
+	"C30", "C50",
+	"C12", "phi12",
+	"C32", "phi32",
+	"C52", "phi52",
+	"C21", "phi21",
+	"C41", "phi41",
+	"C23", "phi23",
+	"C43", "phi43",
+	"C34", "phi34",
+	"C54", "phi54",
+	"C45", "phi45",
+	"C56", "phi56",
+}
+_VALID_ABERRATION_KEYS = _ABERRATION_NAMED | _ABERRATION_POLAR
+
 #If adding a new class of variables, add it to AppConfig, too!
 class Paths(BaseModel):
 	folder_sim: str = Field()
@@ -137,6 +174,67 @@ class Microscope(BaseModel):
 	abfouter: float = Field()
 	bfinner: float = Field()
 	bfouter: float = Field()
+	# Probe defocus — accepts either a float in Ångström, or the literal
+	# string 'scherzer' to ask abtem to compute Scherzer defocus from C30
+	# (spherical aberration) and the beam energy. WARNING: 'scherzer' is a
+	# silent no-op when C30 == 0 (the formula evaluates to 0); the probe
+	# builder emits a runtime warning in that case so the "BF looks like
+	# DF" symptom can't recur without explanation.
+	defocus: float | str = Field(default="scherzer")
+	# Phase-aberration coefficients passed straight through to
+	# abtem.Probe(aberrations=...). All values are in Ångström (or
+	# radians for the angular phi terms), matching abtem's convention.
+	# Common keys: 'C30' (= spherical aberration, Cs), 'C50', 'C12'
+	# (twofold astigmatism), 'phi12' (its angle), 'C32', 'C34', etc.
+	# Defocus is NOT set here — use the top-level `defocus` field above
+	# instead, so the 'scherzer' magic stays consistent. If a 'defocus' /
+	# 'C10' key appears in this dict, it's an error.
+	aberrations: dict[str, float] = Field(default_factory=dict)
+
+	@field_validator("defocus", mode="before")
+	@classmethod
+	def validate_defocus(cls, v: Any):
+		# A number, or the literal string 'scherzer' (case-insensitive).
+		# mode='before' so we see the raw value before pydantic coerces
+		# bool -> int -> float (True would otherwise slip through as 1.0).
+		if isinstance(v, bool):
+			raise ValueError("defocus cannot be a bool")
+		if isinstance(v, str):
+			if v.lower() == "scherzer":
+				return "scherzer"
+			raise ValueError(
+				f"defocus as a string must be 'scherzer', got {v!r}"
+			)
+		return float(v)
+
+	@field_validator("aberrations")
+	@classmethod
+	def validate_aberrations(cls, v: Any):
+		# Reject defocus / C10 here — they go through the dedicated
+		# `defocus` field so the 'scherzer' magic stays in one place.
+		if not isinstance(v, dict):
+			raise ValueError("aberrations must be a dict")
+		for k in ("defocus", "C10"):
+			if k in v:
+				raise ValueError(
+					f"set defocus via microscope.defocus, not "
+					f"microscope.aberrations[{k!r}]"
+				)
+		# Reject keys outside abtem's supported set with a friendly message
+		# listing the polar symbols (catches typos like 'C20' or 'phi21_').
+		# Also reject non-numeric values up front (abtem would error later).
+		for k, val in v.items():
+			if k not in _VALID_ABERRATION_KEYS:
+				raise ValueError(
+					f"aberrations[{k!r}] is not a known abtem aberration "
+					f"symbol. Polar symbols: {sorted(_ABERRATION_POLAR)!r}; "
+					f"named aliases: {sorted(_ABERRATION_NAMED)!r}."
+				)
+			if isinstance(val, bool) or not isinstance(val, (int, float)):
+				raise ValueError(
+					f"aberrations[{k!r}] must be numeric, got {type(val).__name__}"
+				)
+		return {k: float(v) for k, v in v.items()}
 
 	@field_validator("detectors")
 	@classmethod

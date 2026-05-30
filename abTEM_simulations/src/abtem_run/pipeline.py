@@ -42,6 +42,8 @@ class RunContext:
 
 	convergence_angle: float
 	cbed_max_angle: float | str
+	defocus: float | str
+	aberrations: dict
 
 	# resolved detectors (abtem objects)
 	haadf_detector: object
@@ -197,6 +199,8 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		tilt_degrees=cfg.lamella_settings.tilt_degrees,
 		convergence_angle=cfg.microscope.convergence_angle,
 		cbed_max_angle=cfg.microscope.cbed_max_angle,
+		defocus=cfg.microscope.defocus,
+		aberrations=dict(cfg.microscope.aberrations),
 		haadf_detector=haadf_detector,
 		abf_detector=abf_detector,
 		bf_detector=bf_detector,
