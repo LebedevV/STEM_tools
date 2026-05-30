@@ -3,7 +3,9 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
+import logging
 import warnings
+
 
 import ase
 import numpy as np
@@ -13,6 +15,9 @@ from scipy.spatial.transform import Rotation as R
 import dask.array as da
 import dask
 import abtem
+
+
+log = logging.getLogger(__name__)
 
 def get_params(cif_path):
 	'''
@@ -65,7 +70,7 @@ def hkl_to_uvw(param_list,hkl,max_uvw,around=True):
 	
 	out - tuple of 3 ints if uvw, of 3 floats if normal to hkl
 	'''
-	print('Given HKL ',hkl)
+	log.info(f"Given HKL  {hkl}")
 
 	#First, create lattice and its reciprocal version
 	lat = diffpy.structure.Lattice(param_list[0],param_list[1],
@@ -92,7 +97,7 @@ def hkl_to_uvw(param_list,hkl,max_uvw,around=True):
 		out = out.round()
 		out = out.astype(int)
 	out = out.tolist()
-	print('Proposed UVW ',out)
+	log.info(f"Proposed UVW  {out}")
 
 	return(out)
 
@@ -110,20 +115,20 @@ def find_multiplier(frac,max_uvw):
 		res = frac*i - np.round(frac*i)
 		#if there is a way to get ints, there is no point to search further
 		if np.all(abs(res) < 0.0001):
-			print('Ideal multiplier ',i)
+			log.info(f"Ideal multiplier  {i}")
 			m = i
 			found = True
 			break
 		#if somehow reasonable multiplier found, we'd better keep it,
 		#but continue with attempts to find an ideal one
 		if np.all(abs(res) < 0.1) and fl:
-			print('Non-ideal multiplier ',i)
+			log.info(f"Non-ideal multiplier  {i}")
 			m = i
 			found = True
 			fl = False
 
 	if not found:
-		print(f'WARNING: no multiplier within max_uvw={max_uvw} brings {frac} close to integers; falling back to m=1')
+		log.info(f"WARNING: no multiplier within max_uvw={max_uvw} brings {frac} close to integers; falling back to m=1")
 
 	return m
 
@@ -150,38 +155,38 @@ def get_euler_uvw(param_list,uvw):
 	#Fractional coordinates of the real-space uvw and c vectors
 	vv = lat.cartesian(uvw)
 	vc = lat.cartesian([0,0,1])
-	print('Check uvw',uvw)
+	log.info(f"Check uvw {uvw}")
 	
 	#Fractional coordinates of the real-space a,b,c vectors
 	av,bv,cv = lat.cartesian([1,0,0]),lat.cartesian([0,1,0]),lat.cartesian([0,0,1])
 
 	#Another way to get angles between a,b,c and x,y,z
-	print('Sanity check')
+	log.info("Sanity check")
 	sal,sbt,sgm = np.linalg.norm(np.cross(av,[1,0,0])),np.linalg.norm(np.cross(bv,[0,1,0])),np.linalg.norm(np.cross(cv,[0,0,1]))
-	print('Angles to axes',sal,sbt,sgm)
+	log.info(f"Angles to axes {sal} {sbt} {sgm}")
 	
 	#First rotation - bring a to OX by rotation around Z
 	AtoX = R.from_matrix(np.eye(3))
 	if sal != 0:
 		AtoX = R.from_euler('z',-param_list[5]+90,degrees=True)
-		print('Around z by',-param_list[5]+90)
-	print(vv,vc)
+		log.info(f"Around z by {-param_list[5]+90}")
+	log.info(f"{vv} {vc}")
 
 	#Check
 	an_c = lat.angle(uvw,[0,0,1])
-	print('Angle uvw to c',an_c)
+	log.info(f"Angle uvw to c {an_c}")
 
 	#Warning for trigonal systems
 	if param_list[3]-90 !=0:
-		print('Careful! might be an issue there; this angle was not tested properly')
+		log.info("Careful! might be an issue there; this angle was not tested properly")
 	
 	#Second rotation, only for trigonal - around OX (and a), to bring c to XZ plane 
 	CtoZ_bc = R.from_euler('x',param_list[3]-90,degrees=True) #angle between c and z in bc plane
-	print('Around x by',param_list[3]-90)
+	log.info(f"Around x by {param_list[3]-90}")
 	
 	#Third rotation, around OY, to bring c to Z within XZ plane
 	CtoZ_XZ = R.from_euler('y',param_list[4]-90,degrees=True) #angle between c and z in XZ plane
-	print('Around y by',param_list[4]-90)
+	log.info(f"Around y by {param_list[4]-90}")
 	
 	#Combine 2nd and 3rd
 	CtoZ = CtoZ_bc*CtoZ_XZ
@@ -191,7 +196,7 @@ def get_euler_uvw(param_list,uvw):
 	if np.linalg.norm(rot_v) != 0:
 		rot_v = rot_v/np.linalg.norm(rot_v)
 		rot_v = rot_v*an_c
-		print('Around axis',rot_v,'by',np.linalg.norm(rot_v))
+		log.info(f"Around axis {rot_v} by {np.linalg.norm(rot_v)}")
 		VtoC = R.from_rotvec(rot_v,degrees=True)
 		rot = VtoC*CtoZ
 	else:
@@ -202,7 +207,7 @@ def get_euler_uvw(param_list,uvw):
 	#Cumulative rotation
 	rot = rot*AtoX
 	
-	print(np.round(rot.as_matrix(),2))
+	log.info(f"{np.round(rot.as_matrix(),2)}")
 	return rot
 
 
@@ -341,7 +346,7 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 		inplane_angle = compute_inplane_angle_from_hkl(
 			rot_matrix, param_list, list(inplane_align_hkl), axis=inplane_align_axis,
 		)
-		print(f'inplane_align_hkl={list(inplane_align_hkl)}@{inplane_align_axis} '
+		log.info(f'inplane_align_hkl={list(inplane_align_hkl)}@{inplane_align_axis} '
 			f'-> inplane_angle={inplane_angle:.4f} deg')
 
 	#Create supercell
@@ -350,12 +355,12 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 	da_elements = da.from_array(sup.get_chemical_symbols(),chunks=100000)
 	del sup
 	
-	print('There are ',len(da_atoms),' atoms in the supercell')
+	log.info(f"There are  {len(da_atoms)}  atoms in the supercell")
 	
 	#Here we are rotating x,y,z set
 	new_coords =  (da_atoms @ rot_matrix.T).rechunk({1:3})
 
-	print('Rotated')
+	log.info("Rotated")
 
 	ftol = 0.00001
 	#lets select a relatively small test subset of atoms to:
@@ -366,11 +371,11 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 	box = da.ones(3)*box
 	mask = da.all(new_coords > -box - ftol, axis=1) & da.all(
 						new_coords < box + ftol, axis=1 )
-	print('Mask created')
+	log.info("Mask created")
 	test_c = new_coords[mask]
 	chem = da_elements[mask]
 
-	print('Mask applied')
+	log.info("Mask applied")
 	
 	#Here I wish to find an atom of interest nearby 0 and bring it to 0... on the subset of +-abc
 	fin_selected = None
@@ -384,7 +389,7 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 
 			new_zero = [ i for i,j in zip(ref_atoms,dist) if (j > min(dist) - tol) and ( j < min(dist) + tol ) ][0]
 
-			print('Zero moved to',new_zero)
+			log.info(f"Zero moved to {new_zero}")
 			new_coords -= new_zero
 			ref_atoms -= new_zero
 
@@ -397,10 +402,10 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 				dist = ase.geometry.get_distances((0,0,0), p2=proj_XY )[1][0]
 
 				min_r_dist = min(dist[dist>=0.25])
-				print('min_r_dist',min_r_dist)
+				log.info(f"min_r_dist {min_r_dist}")
 
 				selected = np.atleast_2d(proj_XY[dist<min_r_dist*1.025])
-				print('selected',selected)
+				log.info(f"selected {selected}")
 				# Q: ensure we select the nearest one among them
 				if len(selected) > 1:
 					upper_half = [i for i in selected if i[1] > 0]
@@ -410,34 +415,34 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 					else:
 						fin_selected = selected[0]
 				else:
-					print('No pref given')
+					log.info("No pref given")
 					fin_selected = selected[0]
 			elif len(proj_XY) == 1:
 				fin_selected = proj_XY[0]
 			else:
-				print('No in-plane reference atoms found for',atom_to_zero,'; in-plane auto-rotation skipped')
+				log.info(f"No in-plane reference atoms found for {atom_to_zero} ; in-plane auto-rotation skipped")
 
 			if fin_selected is not None:
-				print('Proposed rotation towards',fin_selected)
+				log.info(f"Proposed rotation towards {fin_selected}")
 		else:
-			print('Proposed atom for (0,0,0) is not found; skip')
+			log.info("Proposed atom for (0,0,0) is not found; skip")
 	#Extra shift by z applied here
 	new_coords -= (0,0,-extra_shift_z)
 
-	print('Slab translated')
+	log.info("Slab translated")
 	
 	if inplane_angle is None and fin_selected is not None:
 		rot_angle = np.arccos(np.dot(fin_selected,[1,0,0])/np.linalg.norm(fin_selected))/np.pi*180
-		print('Proposed in-plane rotation',rot_angle)
+		log.info(f"Proposed in-plane rotation {rot_angle}")
 	else:
 		rot_angle = inplane_angle if inplane_angle is not None else 0.
-		print('Requested in-plane rotation',rot_angle)
-	print('in-plane rotation',rot_angle)
+		log.info(f"Requested in-plane rotation {rot_angle}")
+	log.info(f"in-plane rotation {rot_angle}")
 	###Here we are rotating the full set of coordinates (x,y,z)
 	rot_matrix = R.from_euler('z',-rot_angle,degrees=True).as_matrix()
 	new_coords = new_coords @ rot_matrix.T
 
-	print(np.round(rot_matrix,5))
+	log.info(f"{np.round(rot_matrix,5)}")
 
 	###Here we are cropping the lamella, from 0 to lims
 	margin = np.ones(3)*tol
@@ -450,7 +455,7 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 	
 	if not tilt_degrees:
 		tilt = np.array(global_tilt)/1000
-		print('tilt in mrad',tilt)
+		log.info(f"tilt in mrad {tilt}")
 	else:
 		tilt = global_tilt
 	
@@ -459,11 +464,11 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 	rot_matrix_y = R.from_euler('y',tilt[1],degrees=tilt_degrees).as_matrix()
 	cropped = cropped @ rot_matrix_y.T
 
-	print(rot_matrix_x.T,rot_matrix_y.T)
+	log.info(f"{rot_matrix_x.T} {rot_matrix_y.T}")
 	cropped_chem = da_elements[mask_fin]
 	cropped,cropped_chem = dask.compute(cropped,cropped_chem)
 
-	print('Atoms in the lamella',len(cropped))
+	log.info(f"Atoms in the lamella {len(cropped)}")
 
 	#TODO ensure tilt doesnt shift it out of range
 	cell_size = (lamella_sizes[0]+2*vac_xy,lamella_sizes[1]+2*vac_xy,
@@ -514,12 +519,12 @@ def add_probe(ctx, potential, defocus=None):
 
 def add_scan(ctx, probe, pot):
 	default_sampling = probe.ctf.nyquist_sampling * .9
-	print('Proposed sampling', default_sampling)
+	log.info(f"Proposed sampling {default_sampling}")
 	if not ctx.override_sampling:
 		sampling = default_sampling
 	else:
 		sampling = ctx.override_sampling
-		print('Overrided sampling', sampling)
+		log.info(f"Overrided sampling {sampling}")
 	return abtem.scan.GridScan(
 		start=ctx.scan_start,
 		end=ctx.scan_stop,

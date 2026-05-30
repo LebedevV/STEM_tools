@@ -4,6 +4,7 @@ __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
 # zarr<3 is needed!
+import logging
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import product
@@ -13,6 +14,10 @@ import abtem
 # Importing the package runs abtem monkey-patches in __init__.py before any
 # abtem calls happen in this module.
 from .config import AppConfig
+
+
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class RunContext:
@@ -169,7 +174,7 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		from rmm.allocators.cupy import rmm_cupy_allocator
 		cp.cuda.set_allocator(rmm_cupy_allocator)
 	elif cfg.gpu_related.dask_cuda:
-		print('dask_cuda can run only if CUDA is allowed; skipping')
+		log.info('dask_cuda can run only if CUDA is allowed; skipping')
 
 
 	#Number of frozen phonons

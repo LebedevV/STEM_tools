@@ -38,6 +38,7 @@ from pathlib import Path
 import abtem
 import matplotlib.pyplot as plt
 
+from ._log import configure_default_logging
 from .config import load_config
 from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, build_lamella_from_config
@@ -393,6 +394,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None) -> int:
 
 def main():
 	"""``abtem-run-aggregate`` console-script entry."""
+	configure_default_logging()
 	parser = argparse.ArgumentParser(
 		description=(
 			"abtem-run aggregator: mean per-seed outputs/ ∪ outputs_archive/ "

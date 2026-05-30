@@ -4,6 +4,7 @@ __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,9 @@ import tomli_w
 from . import config as confread
 from .pipeline import expand_cfg
 from .simulation import build_lamella_from_config
+
+
+log = logging.getLogger(__name__)
 
 
 def _now_utc_compact() -> str:
@@ -218,5 +222,7 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
 
 
 if __name__ == "__main__":
+    from ._log import configure_default_logging
+    configure_default_logging()
     d = generate_run(Path("config.toml"))
-    print("Generated:", d)
+    log.info(f"Generated: {d}")
