@@ -144,9 +144,11 @@ class Simulations(BaseModel):
 	# both: (a) a static-lattice projected-potential preview
 	# (aggregate/potential_projection_static.*) alongside the phonon-averaged
 	# projection, and (b) ONE extra static-lattice scan per job
-	# (aggregate/<det>_static.{tif,zarr}). The scan path is one additional
-	# multislice per job regardless of seed count; diffraction/CBED static
-	# baselines are not produced (out of scope).
+	# (aggregate/<det>_static.{tif,zarr}) — *only* when do_full_run is also
+	# true; otherwise (b) is skipped with a runtime warning since there is no
+	# detector list to scan with. The scan path is one additional multislice
+	# per job regardless of seed count; diffraction/CBED static baselines are
+	# not produced (out of scope).
 	emit_static_baseline: bool = Field(default=False)
 	# Boundary mode for the post-aggregation gaussian-blur TIFF variants.
 	# Default 'nearest' (extends edge values outward) replaces the older

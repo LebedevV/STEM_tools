@@ -30,6 +30,7 @@ Library:
 import argparse
 import shutil
 import sys
+import warnings
 from pathlib import Path
 
 import abtem
@@ -123,8 +124,21 @@ def _emit_static_scan(ctx, potential, agg_dir: Path) -> None:
 	scan path the worker takes — ``_detector_objects`` + ``run_scan`` — so the
 	static baseline lines up exactly with the phonon-averaged channels (same
 	probe, same scan grid, same detector objects).
+
+	No-op (with a warning) when ``do_full_run`` is off or ``detectors`` is
+	empty: the static-baseline scan needs the same configured detectors the
+	phonon-averaged scan would use, and silently skipping it would surprise a
+	user who set ``emit_static_baseline=true`` expecting a static channel.
 	"""
 	if not (ctx.do_full_run and ctx.detectors):
+		warnings.warn(
+			"emit_static_baseline=true but do_full_run is off or detectors is "
+			"empty; the static-lattice projection is still written, but the "
+			"static-lattice scan (aggregate/<det>_static.*) is SKIPPED — "
+			"there is no detector list to scan with. Set do_full_run=true and "
+			"detectors=[...] if you want the static scan output too.",
+			stacklevel=2,
+		)
 		return
 	detector_objs = _detector_objects(ctx, ctx.detectors)
 	measurements = run_scan(ctx, potential, detector_objs)
