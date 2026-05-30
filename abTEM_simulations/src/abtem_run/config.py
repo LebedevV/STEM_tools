@@ -12,43 +12,6 @@ from typing import Any, Literal
 import tomllib
 from pydantic import BaseModel, Field, field_validator
 
-
-# Mirror of abtem.transfer.polar_aliases (abtem 1.0.9) plus the polar symbols
-# themselves. Hardcoded so config validation doesn't have to import abtem
-# (slow, and runs the runtime monkey-patches). If abtem extends its supported
-# aberration set, mirror new symbols here. Excludes 'defocus' / 'C10' — those
-# go through the dedicated Microscope.defocus field so the 'scherzer' magic
-# stays in one place.
-_ABERRATION_NAMED = {
-	"Cs", "C5",
-	"astigmatism", "astigmatism_angle",
-	"astigmatism3", "astigmatism3_angle",
-	"astigmatism5", "astigmatism5_angle",
-	"coma", "coma_angle",
-	"coma4", "coma4_angle",
-	"trefoil", "trefoil_angle",
-	"trefoil4", "trefoil4_angle",
-	"quadrafoil", "quadrafoil_angle",
-	"quadrafoil5", "quadrafoil5_angle",
-	"pentafoil", "pentafoil_angle",
-	"hexafoil", "hexafoil_angle",
-}
-_ABERRATION_POLAR = {
-	"C30", "C50",
-	"C12", "phi12",
-	"C32", "phi32",
-	"C52", "phi52",
-	"C21", "phi21",
-	"C41", "phi41",
-	"C23", "phi23",
-	"C43", "phi43",
-	"C34", "phi34",
-	"C54", "phi54",
-	"C45", "phi45",
-	"C56", "phi56",
-}
-_VALID_ABERRATION_KEYS = _ABERRATION_NAMED | _ABERRATION_POLAR
-
 #If adding a new class of variables, add it to AppConfig, too!
 class Paths(BaseModel):
 	folder_sim: str = Field()
@@ -222,20 +185,26 @@ class Microscope(BaseModel):
 					f"set defocus via microscope.defocus, not "
 					f"microscope.aberrations[{k!r}]"
 				)
-		# Reject keys outside abtem's supported set with a friendly message
-		# listing the polar symbols (catches typos like 'C20' or 'phi21_').
-		# Also reject non-numeric values up front (abtem would error later).
-		for k, val in v.items():
-			if k not in _VALID_ABERRATION_KEYS:
-				raise ValueError(
-					f"aberrations[{k!r}] is not a known abtem aberration "
-					f"symbol. Polar symbols: {sorted(_ABERRATION_POLAR)!r}; "
-					f"named aliases: {sorted(_ABERRATION_NAMED)!r}."
-				)
-			if isinstance(val, bool) or not isinstance(val, (int, float)):
-				raise ValueError(
-					f"aberrations[{k!r}] must be numeric, got {type(val).__name__}"
-				)
+		# Check keys against abtem's actual supported set rather than a
+		# hardcoded mirror — abtem is the source of truth, no risk of drift
+		# when it widens the set. Lazy import so an empty / unset aberrations
+		# dict still validates without abtem installed (schema-only smoke).
+		if v:
+			from abtem.transfer import polar_aliases
+			valid_named = set(polar_aliases.keys())
+			valid_polar = set(polar_aliases.values())
+			valid = (valid_named | valid_polar) - {"defocus", "C10"}
+			for k, val in v.items():
+				if k not in valid:
+					raise ValueError(
+						f"aberrations[{k!r}] is not a known abtem aberration "
+						f"symbol. Polar symbols: {sorted(valid_polar)!r}; "
+						f"named aliases: {sorted(valid_named)!r}."
+					)
+				if isinstance(val, bool) or not isinstance(val, (int, float)):
+					raise ValueError(
+						f"aberrations[{k!r}] must be numeric, got {type(val).__name__}"
+					)
 		return {k: float(v) for k, v in v.items()}
 
 	@field_validator("detectors")
