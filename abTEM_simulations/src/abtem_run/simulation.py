@@ -256,6 +256,12 @@ def compute_inplane_angle_from_hkl(rot_matrix, param_list, hkl_align, axis='y'):
 	correctly because the hkl -> cartesian step goes through diffpy's
 	reciprocal-lattice ``Lattice.cartesian`` (uses the metric tensor), not
 	a naive component-wise conversion.
+
+	Caveat: the math is sound for any cell, but the non-orthogonal branches
+	(trigonal in particular) inherit the same "not properly tested" caveat
+	already noted on ``get_euler_uvw``. Worth eyeballing the output on a
+	real non-orthogonal CIF before trusting it in production until tests
+	land.
 	"""
 	if not (isinstance(hkl_align, (list, tuple)) and len(hkl_align) == 3 and all(isinstance(x, int) for x in hkl_align)):
 		raise ValueError(f"hkl_align must be 3 ints, got {hkl_align!r}")
