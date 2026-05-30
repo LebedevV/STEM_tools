@@ -18,11 +18,16 @@ Patches applied are recorded in `_PATCHES_APPLIED` for diagnostics:
     >>> _PATCHES_APPLIED
     {'_partition_args_meta': True, '_fft_dispatch_cufft_numpy': True}
 
-Both patches:
+Patches:
   1. _partition_args_meta — cupy rejects `object` dtype in da.blockwise
      meta. Rewrite ArrayObject._partition_args to use np.array(..., dtype=object).
   2. _fft_dispatch_cufft_numpy — fft="cufft" + numpy array crashes
      _fft_dispatch's else branch. Add a numpy fallback before the raise.
+  3. _gaussian_filter_boundary_modes — abtem.measurements._BaseMeasurement2D
+     .gaussian_filter only accepts {'periodic', 'reflect', 'constant'} and
+     raises a bare ValueError() for anything else. Broaden the allow-list to
+     cover every scipy.ndimage mode (incl. 'nearest', the new default for
+     simulations.blur_boundary) and give the rejection a useful message.
 """
 import inspect
 import textwrap
@@ -127,6 +132,42 @@ def _apply_all_patches() -> None:
 				"            return getattr(np.fft, func_name)(x, **kwargs)\n"
 				"        else:\n"
 				"            raise RuntimeError()"
+			),
+		)
+
+	# Broaden gaussian_filter's allowed boundary modes. abtem 1.0.9 hardcodes
+	# {periodic, reflect, constant} and rejects everything else with a bare
+	# ValueError(). simulations.blur_boundary needs at least 'nearest' (the
+	# new default), so we expand the allow-list to the full scipy.ndimage
+	# mode set.
+	try:
+		import abtem.measurements as _ab_meas
+	except ImportError:
+		_PATCHES_APPLIED["_gaussian_filter_boundary_modes"] = False
+	else:
+		_apply_substitution_patch(
+			name="_gaussian_filter_boundary_modes",
+			module=_ab_meas,
+			owner=_ab_meas._BaseMeasurement2D,
+			attr_name="gaussian_filter",
+			target=(
+				"    elif boundary in (\"reflect\", \"constant\"):\n"
+				"        mode = boundary\n"
+				"    else:\n"
+				"        raise ValueError()"
+			),
+			replacement=(
+				"    elif boundary in (\n"
+				"        \"reflect\", \"constant\", \"nearest\", \"mirror\", \"wrap\",\n"
+				"        \"grid-constant\", \"grid-mirror\", \"grid-wrap\",\n"
+				"    ):\n"
+				"        mode = boundary\n"
+				"    else:\n"
+				"        raise ValueError(\n"
+				"            f\"unknown gaussian_filter boundary mode: {boundary!r}; \"\n"
+				"            \"must be one of {periodic, reflect, constant, nearest, \"\n"
+				"            \"mirror, wrap, grid-constant, grid-mirror, grid-wrap}\"\n"
+				"        )"
 			),
 		)
 

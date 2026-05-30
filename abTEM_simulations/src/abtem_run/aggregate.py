@@ -58,7 +58,8 @@ def _mean_zarr_channel(out_dir: Path, channel_name: str):
 	return mean.compute() if hasattr(mean, "compute") else mean
 
 
-def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs: bool):
+def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *,
+		with_blurs: bool, blur_boundary: str = "nearest"):
 	"""Aggregate one channel; write {channel}.{tif,zarr} (+ blurred TIFFs if
 	requested) and return the cross-seed mean (or None if no seeds produced
 	this channel — used for "no data, skip"; an abtem read/stack/mean error
@@ -74,7 +75,7 @@ def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs
 		# Same blur set as the legacy save_images.
 		for sigma in BLUR_SIGMAS:
 			tag = str(sigma).replace(".", "-")
-			blurred = mean.gaussian_filter(sigma, boundary="constant")
+			blurred = mean.gaussian_filter(sigma, boundary=blur_boundary)
 			blurred.to_tiff(str(agg_dir / f"{channel_name}_{tag}.tif"))
 	return mean
 
@@ -186,7 +187,7 @@ def aggregate_job(job_dir) -> None:
 	# 1. Scan channels (with blurs)
 	if ctx.do_full_run:
 		for det_name in ctx.detectors:
-			_emit_channel(out_dir, agg_dir, det_name, with_blurs=True)
+			_emit_channel(out_dir, agg_dir, det_name, with_blurs=True, blur_boundary=ctx.blur_boundary)
 
 	# 2. Plane-wave diffraction
 	if ctx.do_diffraction:

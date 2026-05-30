@@ -7,7 +7,7 @@ __license__ = "GPL-v3"
 # Need to be edited only if new variables are added or config file is split
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import tomllib
 from pydantic import BaseModel, Field, field_validator
@@ -84,6 +84,13 @@ class Simulations(BaseModel):
 	# phonons) projected-potential reference, kept apart from the phonon-
 	# averaged result. (Reserved to also gate a static-lattice scan baseline.)
 	emit_static_baseline: bool = Field(default=False)
+	# Boundary mode for the post-aggregation gaussian-blur TIFF variants.
+	# Default 'nearest' (extends edge values outward) replaces the older
+	# 'constant' (pads with 0) which produced dark halos at lamella edges.
+	# 'constant' remains available for byte-comparability with pre-2026-05
+	# outputs. 'reflect' and 'wrap' are scipy.ndimage.gaussian_filter modes,
+	# threaded straight through abtem.Images.gaussian_filter(boundary=...).
+	blur_boundary: Literal["nearest", "constant", "reflect", "wrap"] = Field(default="nearest")
 
 class Microscope(BaseModel):
 	HT_value: int | list[int ] = Field()
