@@ -26,6 +26,13 @@ class Job(BaseModel):
 	is_uvw: bool = Field()
 	phonons_seed: int = Field(default=0)
 	inplane_angle: float | str = Field(default=0.0)  # degrees, or 'auto'
+	# "This hkl up" alignment: if set, the in-plane angle is computed so
+	# the projection of the hkl normal (in lab XY, after the out-of-plane
+	# rotation has been applied) lands on the chosen lab axis ('x' or 'y').
+	# When set, OVERRIDES inplane_angle and the 'auto' atom-to-zero path.
+	# See simulation.compute_inplane_angle_from_hkl.
+	inplane_align_hkl: list[int] | None = Field(default=None)
+	inplane_align_axis: Literal["x", "y"] = Field(default="y")
 
 	@field_validator("hkl_to_do")
 	@classmethod
@@ -39,6 +46,21 @@ class Job(BaseModel):
 					raise ValueError("Each HKL entry must be a list of 3 integers.")
 			return v
 		raise ValueError("hkl_to_do must be [h,k,l] or a list of [h,k,l] entries.")
+
+	@field_validator("inplane_align_hkl")
+	@classmethod
+	def validate_inplane_align_hkl(cls, v: Any):
+		# Must be None, or a list of exactly three ints. [0,0,0] is undefined
+		# (zero vector has no direction) so reject it here rather than letting
+		# the downstream code raise from arctan2(0,0). Negative indices are
+		# fine and meaningful — don't reject them.
+		if v is None:
+			return None
+		if not (isinstance(v, list) and len(v) == 3 and all(isinstance(x, int) for x in v)):
+			raise ValueError("inplane_align_hkl must be a list of 3 ints or null")
+		if all(x == 0 for x in v):
+			raise ValueError("inplane_align_hkl cannot be [0,0,0] — undefined direction")
+		return v
 
 	@field_validator("inplane_angle")
 	@classmethod

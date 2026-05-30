@@ -190,6 +190,7 @@ from .simulation import (
 	add_probe,
 	add_scan,
 	add_vacancies,
+	compute_inplane_angle_from_hkl,
 	make_lamella,
 )
 from .pipeline import (
@@ -212,6 +213,7 @@ __all__ = [
 	"add_probe",
 	"add_scan",
 	"add_vacancies",
+	"compute_inplane_angle_from_hkl",
 	"make_lamella",
 	# pipeline (shared infrastructure for the worker path)
 	"RunContext",
