@@ -23,11 +23,13 @@ CLI:
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
 from ._log import configure_default_logging
 from .aggregate import aggregate_job, aggregate_series
+from .config import load_config
 from .generator_run import generate_run
 from .worker import run_one_seed
 
@@ -42,6 +44,7 @@ def run_pipeline(
 	config_path=None,
 	*,
 	generate_only: bool = False,
+	show_estimate: bool = True,
 	resume_dir=None,
 ) -> Path:
 	"""Library entry point for the in-process pipeline.
@@ -79,6 +82,14 @@ def run_pipeline(
 			raise ValueError("Either config_path or resume_dir must be provided")
 	elif generate_only:
 		raise ValueError("generate_only cannot be combined with resume_dir")
+
+	# Pre-flight cost estimate (skipped on resume since there's no config
+	# to estimate from). Logged at INFO so it follows the same routing as
+	# the rest of the pipeline output; silence with show_estimate=False or
+	# env ABTEM_RUN_NO_ESTIMATE=1.
+	if resume_dir is None and show_estimate and not os.environ.get("ABTEM_RUN_NO_ESTIMATE"):
+		from ._estimate import estimate_run_cost, format_run_cost
+		log.info(format_run_cost(estimate_run_cost(load_config(config_path))))
 
 	if resume_dir is None:
 		log.info(f"abtem-run: generating queue from {config_path}")
@@ -182,6 +193,14 @@ def main():
 		metavar="N",
 		help="cap N for --aggregate-series (default: all available seeds).",
 	)
+	parser.add_argument(
+		"--no-estimate",
+		action="store_true",
+		help=(
+			"suppress the pre-flight cost estimate block before generator runs. "
+			"Also suppressed by setting ABTEM_RUN_NO_ESTIMATE=1 in the environment."
+		),
+	)
 	args = parser.parse_args()
 
 	# Standalone aggregate modes are mutually exclusive with the pipeline
@@ -202,9 +221,9 @@ def main():
 	elif args.resume is not None:
 		if args.generate_only:
 			parser.error("--generate-only cannot be combined with --resume")
-		run_pipeline(resume_dir=args.resume)
+		run_pipeline(resume_dir=args.resume, show_estimate=not args.no_estimate)
 	else:
-		run_pipeline(args.config, generate_only=args.generate_only)
+		run_pipeline(args.config, generate_only=args.generate_only, show_estimate=not args.no_estimate)
 	return 0
 
 
