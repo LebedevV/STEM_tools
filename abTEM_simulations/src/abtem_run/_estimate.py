@@ -136,11 +136,12 @@ def estimate_run_cost(cfg) -> RunCost:
 			n_seeds = 1
 		else:
 			n_seeds = int(fp)
-		# Number of (phase, hkl) combinations in this expanded cfg. v6's
-		# generator emits one job dir per (phase, hkl, tilt); the tilt is
-		# already a scalar here (expand_cfg yields per-tilt).
+		# v6's generator emits one job dir per (phase, hkl, tilt). The tilt
+		# is scalar here (expand_cfg yields per-tilt); multiply by
+		# len(phase_list) × len(hkl_list) for the remaining axes.
+		n_phases = len(cfg_run.job.phase_list)
 		n_hkl = len(cfg_run.job.hkl_list)
-		for _ in range(n_hkl):
+		for _ in range(n_phases * n_hkl):
 			per_job.append(JobCost(
 				scan_per_seed=1 if sim.do_full_run else 0,
 				diffraction_per_seed=1 if mic.do_diffraction else 0,

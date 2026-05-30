@@ -164,58 +164,69 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
     for frame_idx, cfg_frame in enumerate(frames):
         cfg_dict = cfg_frame.model_dump()
 
-        phase = str(cfg_dict["job"]["phase"])
-        phase_name = _phase_stem(phase)
+        # phase can be a single string OR a list. Normalize and iterate;
+        # each phase becomes its own job dir(s) with locked seed integers
+        # across phases for direct phase-vs-phase comparisons.
+        raw_phase = cfg_dict["job"]["phase"]
+        phase_iter = raw_phase if isinstance(raw_phase, list) else [str(raw_phase)]
         is_uvw = bool(cfg_dict["job"]["is_uvw"])
         hkls = _iter_hkls(cfg_dict)
         seeds = _seed_list_from_cfg(cfg_dict)
         tilt = _tilt_str(cfg_dict)
 
-        # For each HKL, create an independent "job folder"
-        for hkl in hkls:
-            line_hkl = "".join(str(x) for x in hkl)
+        for phase in phase_iter:
+            phase = str(phase)
+            phase_name = _phase_stem(phase)
 
-            # This is the naming analogue of: f"{sg}_{line_hkl}_{ctx.global_tilt}.toml"
-            # We use (phase, line_hkl, tilt) because sg isn't known until CIF is parsed.
-            stem = f"{phase_name}_{line_hkl}_{tilt}"
+            # For each HKL, create an independent "job folder"
+            for hkl in hkls:
+                line_hkl = "".join(str(x) for x in hkl)
 
-            job_dir = run_dir / stem
-            (job_dir / "seeds").mkdir(parents=True, exist_ok=True)
-            (job_dir / "outputs").mkdir(parents=True, exist_ok=True)
-            (job_dir / "aggregate").mkdir(parents=True, exist_ok=True)
+                # This is the naming analogue of: f"{sg}_{line_hkl}_{ctx.global_tilt}.toml"
+                # We use (phase, line_hkl, tilt) because sg isn't known until CIF is parsed.
+                stem = f"{phase_name}_{line_hkl}_{tilt}"
 
-            # Write job-local TOML. Scalarize hkl_to_do to this job's single
-            # hkl: the worker rebuilds the lamella from cfg.job.hkl_list[0], so
-            # each job dir must carry only its own direction, not the full sweep.
-            job_cfg_dict = dict(cfg_dict)
-            job_cfg_dict["job"] = dict(cfg_dict["job"])
-            job_cfg_dict["job"]["hkl_to_do"] = hkl
-            cfg_out_path = job_dir / f"{stem}.toml"
-            _atomic_write_toml(cfg_out_path, job_cfg_dict)
+                job_dir = run_dir / stem
+                (job_dir / "seeds").mkdir(parents=True, exist_ok=True)
+                (job_dir / "outputs").mkdir(parents=True, exist_ok=True)
+                (job_dir / "aggregate").mkdir(parents=True, exist_ok=True)
 
-            # Planning artifacts: surf.xyz + combined.png. Cheap, no GPU.
-            _emit_planning_artifacts(cfg_frame, hkl, line_hkl, job_dir)
+                # Write job-local TOML. Scalarize hkl_to_do AND phase so the
+                # job dir carries a single direction and a single CIF (the
+                # worker rebuilds the lamella from cfg.job.hkl_list[0] +
+                # cfg.job.phase, and expects scalars).
+                job_cfg_dict = dict(cfg_dict)
+                job_cfg_dict["job"] = dict(cfg_dict["job"])
+                job_cfg_dict["job"]["hkl_to_do"] = hkl
+                job_cfg_dict["job"]["phase"] = phase
+                cfg_out_path = job_dir / f"{stem}.toml"
+                _atomic_write_toml(cfg_out_path, job_cfg_dict)
 
-            # Create one .todo per seed (or seed 0 baseline if no phonons).
-            # Atomic write via tmp + os.replace; seeds/ already exists.
-            for s in seeds:
-                todo = job_dir / "seeds" / f"seed_{s:06d}.todo"
-                tmp = todo.with_suffix(todo.suffix + ".tmp")
-                tmp.write_text(f"{s}\n", encoding="utf-8")
-                os.replace(tmp, todo)
+                # Planning artifacts: surf.xyz + combined.png. Cheap, no GPU.
+                # Use the per-phase cfg_frame so make_lamella reads the right CIF.
+                cfg_frame_for_phase = confread.AppConfig.model_validate(job_cfg_dict)
+                _emit_planning_artifacts(cfg_frame_for_phase, hkl, line_hkl, job_dir)
 
-            manifest["jobs"].append(
-                {
-                    "frame_id": frame_idx,
-                    "phase": phase,
-                    "hkl": hkl,
-                    "is_uvw": is_uvw,
-                    "tilt": tilt,
-                    "job_dir": str(job_dir.relative_to(run_dir)),
-                    "cfg": str(cfg_out_path.relative_to(run_dir)),
-                    "n_tasks": len(seeds),
-                }
-            )
+                # Create one .todo per seed (or seed 0 baseline if no phonons).
+                # Atomic write via tmp + os.replace; seeds/ already exists.
+                for s in seeds:
+                    todo = job_dir / "seeds" / f"seed_{s:06d}.todo"
+                    tmp = todo.with_suffix(todo.suffix + ".tmp")
+                    tmp.write_text(f"{s}\n", encoding="utf-8")
+                    os.replace(tmp, todo)
+
+                manifest["jobs"].append(
+                    {
+                        "frame_id": frame_idx,
+                        "phase": phase,
+                        "hkl": hkl,
+                        "is_uvw": is_uvw,
+                        "tilt": tilt,
+                        "job_dir": str(job_dir.relative_to(run_dir)),
+                        "cfg": str(cfg_out_path.relative_to(run_dir)),
+                        "n_tasks": len(seeds),
+                    }
+                )
 
     _atomic_write_json(run_dir / "run_manifest.json", manifest)
     return run_dir
