@@ -319,8 +319,10 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None) -> int:
 
 	n_phonons caps N (default: all available seeds). Returns N emitted.
 	The projection preview (phonon-averaged + optional static baseline) is
-	written ONCE at aggregate/, over ALL available seeds — not per-k.
-	Does NOT archive outputs/ (read-only over the per-seed data).
+	written ONCE at aggregate/, over ALL available seeds — the
+	``n_phonons`` cap applies only to the per-k cumulative-mean frames,
+	not to the projection. Does NOT archive outputs/ (read-only over the
+	per-seed data).
 
 	Raises FileNotFoundError / RuntimeError on the same conditions as
 	aggregate_job.
@@ -393,9 +395,23 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None) -> int:
 					with_blurs=True, blur_sigmas=ctx.blur_sigmas, max_seeds=k,
 				)
 		if ctx.do_diffraction:
-			_emit_channel(out_dir, archive_dir, k_dir, "diff", with_blurs=False, max_seeds=k)
+			diff_mean = _emit_channel(
+				out_dir, archive_dir, k_dir, "diff",
+				with_blurs=False, max_seeds=k,
+			)
+			if diff_mean is not None:
+				_write_pattern_preview(
+					diff_mean, cfg, k_dir, "diff", "diffraction", figsize=(10, 6),
+				)
 		if ctx.do_cbed:
-			_emit_channel(out_dir, archive_dir, k_dir, "cbed", with_blurs=False, max_seeds=k)
+			cbed_mean = _emit_channel(
+				out_dir, archive_dir, k_dir, "cbed",
+				with_blurs=False, max_seeds=k,
+			)
+			if cbed_mean is not None:
+				_write_pattern_preview(
+					cbed_mean, cfg, k_dir, "cbed", "CBED", figsize=(8, 6),
+				)
 
 	return n_max
 
