@@ -171,13 +171,14 @@ product of all such fields. Sweepable: `frozen_phonons`, `fph_sigma`,
   for the post-aggregation gaussian-blur previews. One blurred TIFF per
   sigma per channel: `aggregate/<channel>_<sigma>.tif`. Set to `[]` to
   skip blur previews entirely.
-- **`emit_static_baseline`** — when `true`, the aggregator runs one extra
-  static-lattice multislice per job and writes
-  `aggregate/<det>_static.{tif,zarr}` alongside the phonon-averaged
-  outputs. One additional multislice per job regardless of seed count.
-  Requires `do_full_run = true` (otherwise there's no detector list to
-  scan with); the runtime emits a warning and skips the scan in that
-  combination.
+- **`emit_static_baseline`** — when `true`, the aggregator also writes a
+  static-lattice projected-potential preview
+  (`aggregate/potential_projection_static.{png,tif}`) alongside the
+  phonon-averaged projection. Cheap — reuses the ground-state potential
+  the aggregator already builds for the probe-shape side panel. For a
+  static-lattice **scan**, run a separate job with
+  `frozen_phonons = "None"`; the aggregator itself does no scan
+  multislice.
 - **`test_enabled`** — the aggregator preserves per-seed `outputs/`
   instead of archiving, and the worker writes
   `seed_NNNNNN_displaced.xyz` for inspection.
