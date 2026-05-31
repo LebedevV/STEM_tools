@@ -10,8 +10,7 @@ small benchmark to a full run before kicking off.
 
 Surfaces the "12-hour run, killed at 1h" failure mode pre-emptively:
 hard to misjudge a run when the estimator says "8 jobs × 16 seeds ×
-~15600 scan positions per multislice = ~2 million scan positions, plus
-8 static-baseline scans".
+~15600 scan positions per multislice = ~2 million scan positions".
 
 Used by ``cli.run_pipeline`` before generator + workers. Skip with
 ``--no-estimate``.
@@ -27,15 +26,11 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class JobCost:
-	"""Per-job cost breakdown.
-
-	Multislice counts are per-seed (so total = n_seeds × {scan, diff,
-	cbed}) plus the one-off static-baseline (per job, not per seed).
-	"""
+	"""Per-job cost breakdown. Multislice counts are per-seed (so total
+	= n_seeds × {scan, diff, cbed})."""
 	scan_per_seed: int          # 0 or 1 (do_full_run)
 	diffraction_per_seed: int   # 0 or 1 (do_diffraction)
 	cbed_per_seed: int          # 0 or 1 (do_cbed)
-	static_baseline: int        # 0 or 1 (emit_static_baseline)
 	scan_positions: int         # estimated scan grid size for this lamella
 	n_detectors: int            # configured scan detectors
 	n_seeds: int                # frozen_phonons (or 1 for "no phonons")
@@ -47,8 +42,7 @@ class JobCost:
 
 	@property
 	def total_multislices(self) -> int:
-		"""Total multislice calls for this job (worker + aggregator side)."""
-		return self.n_seeds * self.per_seed_multislices + self.static_baseline
+		return self.n_seeds * self.per_seed_multislices
 
 
 @dataclass(frozen=True)
@@ -72,7 +66,7 @@ class RunCost:
 		cost is roughly constant for a given lamella thickness on a
 		given GPU."""
 		return sum(
-			(j.n_seeds * j.scan_per_seed + j.static_baseline) * j.scan_positions
+			j.n_seeds * j.scan_per_seed * j.scan_positions
 			for j in self.per_job
 		)
 
@@ -132,17 +126,11 @@ def estimate_run_cost(cfg) -> RunCost:
 		# len(phase_list) × len(hkl_list) for the remaining axes.
 		n_phases = len(cfg_run.job.phase_list)
 		n_hkl = len(cfg_run.job.hkl_list)
-		# Match aggregate._emit_static_scan's runtime gate: the static-baseline
-		# scan is skipped (with a warning) when do_full_run is off, since
-		# there's no detector list to scan with. Mirror that here so the
-		# total count doesn't over-promise.
-		static_runs = 1 if (sim.emit_static_baseline and sim.do_full_run) else 0
 		for _ in range(n_phases * n_hkl):
 			per_job.append(JobCost(
 				scan_per_seed=1 if sim.do_full_run else 0,
 				diffraction_per_seed=1 if mic.do_diffraction else 0,
 				cbed_per_seed=1 if mic.do_cbed else 0,
-				static_baseline=static_runs,
 				scan_positions=_estimate_scan_positions(cfg_run),
 				n_detectors=len(mic.detectors),
 				n_seeds=n_seeds,
@@ -201,11 +189,6 @@ def format_run_cost(cost: RunCost) -> str:
 			lines.append("      diff: 1 (plane-wave, single multislice)")
 		if ref.cbed_per_seed:
 			lines.append("      cbed: 1 (probe-at-center, single multislice)")
-		if ref.static_baseline:
-			lines.append(
-				f"    static_baseline:              1 (once per job, "
-				f"detectors={ref.n_detectors}, ~{pos_s} positions)"
-			)
 		lines.append(f"    lamella thickness (Å):        {thick_s}")
 
 	lines.append("=" * 64)
