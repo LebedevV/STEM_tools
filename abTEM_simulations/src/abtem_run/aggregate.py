@@ -161,17 +161,17 @@ def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, targe
 	if mean_proj is None and not cfg.simulations.emit_static_baseline:
 		return
 
-	static_potential = make_potential(
-		build_lamella_from_config(cfg, cfg.job.hkl_list[0])
-	).build().compute()
-	probe = add_probe(ctx, static_potential)
-
 	if mean_proj is not None:
+		probe = add_probe(ctx, mean_proj)
 		_write_projection(mean_proj, probe, cfg, target_dir,
 			"potential_projection", "phonon-averaged projection")
 
 	if cfg.simulations.emit_static_baseline:
+		static_potential = make_potential(
+			build_lamella_from_config(cfg, cfg.job.hkl_list[0])
+		).build().compute()
 		static_proj = static_potential.project().to_cpu().compute()
+		probe = add_probe(ctx, static_potential)
 		_write_projection(static_proj, probe, cfg, target_dir,
 			"potential_projection_static", "static lattice projection")
 
