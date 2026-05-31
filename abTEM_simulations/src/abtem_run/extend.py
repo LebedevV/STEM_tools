@@ -22,6 +22,7 @@ source).
 """
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,7 +55,8 @@ def _scan_used_seeds(job_dir: Path) -> set[int]:
 
 
 def _append_extension_log(job_dir: Path, *, added: list[int], source: str) -> None:
-	"""Append a record to extensions.json."""
+	"""Append a record to extensions.json (atomic tmp + os.replace so a
+	crash mid-write doesn't truncate the history)."""
 	log_path = job_dir / "extensions.json"
 	if log_path.exists():
 		try:
@@ -69,7 +71,9 @@ def _append_extension_log(job_dir: Path, *, added: list[int], source: str) -> No
 		"added_seeds": list(added),
 		"count": len(added),
 	})
-	log_path.write_text(json.dumps(history, indent=2) + "\n")
+	tmp = log_path.with_suffix(log_path.suffix + ".tmp")
+	tmp.write_text(json.dumps(history, indent=2) + "\n")
+	os.replace(tmp, log_path)
 
 
 def extend_job(
