@@ -77,6 +77,14 @@ docs = [
     "myst-parser>=2",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Tests sit outside the package and need src/ on the path. When the package is
+# installed via `pip install -e .` this is automatic; pythonpath here keeps
+# `pytest` working from a fresh checkout without install. `tests` is added so
+# the shared `_fixtures` helper module is importable from any test file.
+pythonpath = ["src", "tests"]
+
 [tool.mypy]
 python_version = "3.11"
 # Permissive baseline: the codebase is partially-typed and depends on
