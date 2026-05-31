@@ -252,16 +252,9 @@ def compute_inplane_angle_from_hkl(rot_matrix, param_list, hkl_align, axis='y'):
 
 	Notes
 	-----
-	Trigonal / hexagonal / monoclinic / triclinic cells are handled
-	correctly because the hkl -> cartesian step goes through diffpy's
-	reciprocal-lattice ``Lattice.cartesian`` (uses the metric tensor), not
-	a naive component-wise conversion.
-
-	Caveat: the math is sound for any cell, but the non-orthogonal branches
-	(trigonal in particular) inherit the same "not properly tested" caveat
-	already noted on ``get_euler_uvw``. Worth eyeballing the output on a
-	real non-orthogonal CIF before trusting it in production until tests
-	land.
+	The hkl -> cartesian step uses diffpy's metric tensor, so non-orthogonal
+	cells are handled — but the non-orthogonal branches share the
+	"not properly tested" caveat on ``get_euler_uvw``.
 	"""
 	if not (isinstance(hkl_align, (list, tuple)) and len(hkl_align) == 3 and all(isinstance(x, int) for x in hkl_align)):
 		raise ValueError(f"hkl_align must be 3 ints, got {hkl_align!r}")
@@ -483,13 +476,9 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 	
 
 def _resolve_defocus(defocus, c30, energy):
-	"""Return ``defocus`` as a numeric value in Å. If the input is the magic
-	string 'scherzer', evaluate Scherzer's formula explicitly using the
-	provided C30 and energy. We resolve here (rather than letting abtem do
-	it via the aberrations dict) because abtem 1.0.9 reads C30 from the
-	partial state as it iterates the aberrations dict — if 'defocus' is
-	encountered before 'C30', Scherzer evaluates with the wrong (zero) C30.
-	Resolving ourselves is order-independent.
+	"""Resolve ``defocus`` to a numeric Å value. ``'scherzer'`` evaluates
+	scherzer_defocus(C30, energy) explicitly — abtem 1.0.9 lets dict order
+	determine which C30 it sees, so we resolve ourselves to stay order-safe.
 	"""
 	if not (isinstance(defocus, str) and defocus.lower() == "scherzer"):
 		return float(defocus)
@@ -498,40 +487,20 @@ def _resolve_defocus(defocus, c30, energy):
 
 
 def add_probe(ctx, potential, defocus=None):
-	"""Construct an abtem.Probe consistent with cfg.microscope and match
-	its grid to ``potential``. Single source of truth for energy,
-	semiangle_cutoff, defocus, and the optional aberrations dict across the
-	pipeline (worker + aggregator both call this).
+	"""Build an abtem.Probe from ctx and match its grid to ``potential``.
 
-	``defocus`` defaults to None: defocus + aberrations come from
-	``ctx.defocus`` / ``ctx.aberrations``. Passing an explicit ``defocus=``
-	(float or 'scherzer') overrides ctx.defocus for that one probe.
-
-	If the resolved defocus is ``'scherzer'`` and the resolved C30
-	(spherical aberration) is 0, Scherzer's formula evaluates to 0 — i.e.
-	the probe is in-focus with no aberrations, which produces the
-	"BF looks like DF" symptom (zero-defocus inverted-center pattern).
-	Emit a runtime warning so this can't recur silently. Set
-	``cfg.microscope.aberrations.C30`` to a non-zero value (typical
-	uncorrected 200 kV: 1.0e7 Å = 1 mm; aberration-corrected: 1.0e4 Å =
-	1 μm) to get a meaningful Scherzer defocus.
-
-	All abtem aberration keys (``C12``, ``C30``, ``phi12``, …) pass through
-	unchanged, so callers can configure any phase aberration abtem supports
-	via ``cfg.microscope.aberrations``.
+	``defocus`` (float, ``'scherzer'``, or None=use ctx.defocus) overrides
+	ctx.defocus for this probe. Warns if the resolved defocus is
+	``'scherzer'`` with C30=0 — the formula evaluates to 0, giving an
+	in-focus probe (the "BF looks like DF" artifact).
 	"""
 	aberrations = dict(ctx.aberrations)
 	c30 = float(aberrations.get("C30", 0.0))
 	defocus_in = defocus if defocus is not None else ctx.defocus
 	if isinstance(defocus_in, str) and defocus_in.lower() == "scherzer" and c30 == 0.0:
 		warnings.warn(
-			"microscope.defocus='scherzer' is a no-op when "
-			"microscope.aberrations.C30 is 0 (Scherzer formula evaluates "
-			"to 0). The resulting probe is in-focus with no aberrations, "
-			"which can give the 'BF looks like DF' inverted-center "
-			"artifact on thin samples. Set aberrations.C30 to a non-zero "
-			"value (typical uncorrected 200 kV: 1.0e7 Å) or set defocus "
-			"to an explicit number in Å.",
+			"defocus='scherzer' is a no-op with aberrations.C30=0; "
+			"set C30 to a non-zero Å value or pass a numeric defocus.",
 			stacklevel=2,
 		)
 	aberrations["defocus"] = _resolve_defocus(defocus_in, c30, ctx.HT_value)

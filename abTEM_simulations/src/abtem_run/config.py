@@ -26,11 +26,8 @@ class Job(BaseModel):
 	is_uvw: bool = Field()
 	phonons_seed: int = Field(default=0)
 	inplane_angle: float | str = Field(default=0.0)  # degrees, or 'auto'
-	# "This hkl up" alignment: if set, the in-plane angle is computed so
-	# the projection of the hkl normal (in lab XY, after the out-of-plane
-	# rotation has been applied) lands on the chosen lab axis ('x' or 'y').
-	# When set, OVERRIDES inplane_angle and the 'auto' atom-to-zero path.
-	# See simulation.compute_inplane_angle_from_hkl.
+	# "This hkl up" alignment: lands the hkl normal's in-plane projection on
+	# inplane_align_axis ('x' or 'y'). Overrides inplane_angle when set.
 	inplane_align_hkl: list[int] | None = Field(default=None)
 	inplane_align_axis: Literal["x", "y"] = Field(default="y")
 
@@ -50,10 +47,7 @@ class Job(BaseModel):
 	@field_validator("inplane_align_hkl")
 	@classmethod
 	def validate_inplane_align_hkl(cls, v: Any):
-		# Must be None, or a list of exactly three ints. [0,0,0] is undefined
-		# (zero vector has no direction) so reject it here rather than letting
-		# the downstream code raise from arctan2(0,0). Negative indices are
-		# fine and meaningful — don't reject them.
+		# Reject [0,0,0] up front (would trip arctan2(0,0) downstream).
 		if v is None:
 			return None
 		if not (isinstance(v, list) and len(v) == 3 and all(isinstance(x, int) for x in v)):
@@ -102,20 +96,11 @@ class Simulations(BaseModel):
 	# test_enabled=true: aggregator keeps outputs/ intact instead of deleting
 	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
 	test_enabled: bool = Field(default=False)
-	# emit_static_baseline=true: also emit a separate static-lattice (no
-	# phonons) projected-potential preview
-	# (aggregate/potential_projection_static.{png,tif}) alongside the
-	# phonon-averaged projection. Cheap — reuses the ground-state potential
-	# the aggregator already builds for the probe-shape side panel. No
-	# static-lattice scan is emitted from here; for a static scan, run a
-	# separate job with frozen_phonons = "None".
+	# emit_static_baseline=true: also write aggregate/potential_projection_static.*
+	# alongside the phonon-averaged projection.
 	emit_static_baseline: bool = Field(default=False)
-	# Boundary mode for the post-aggregation gaussian-blur TIFF variants.
-	# Default 'nearest' (extends edge values outward) replaces the older
-	# 'constant' (pads with 0) which produced dark halos at lamella edges.
-	# 'constant' remains available for byte-comparability with pre-2026-05
-	# outputs. 'reflect' and 'wrap' are scipy.ndimage.gaussian_filter modes,
-	# threaded straight through abtem.Images.gaussian_filter(boundary=...).
+	# Boundary mode for the gaussian-blur TIFF variants. Threaded into
+	# abtem.Images.gaussian_filter(boundary=...).
 	blur_boundary: Literal["nearest", "constant", "reflect", "wrap"] = Field(default="nearest")
 
 class Microscope(BaseModel):
@@ -136,72 +121,41 @@ class Microscope(BaseModel):
 	abfouter: float = Field()
 	bfinner: float = Field()
 	bfouter: float = Field()
-	# Probe defocus — accepts either a float in Ångström, or the literal
-	# string 'scherzer' to ask abtem to compute Scherzer defocus from C30
-	# (spherical aberration) and the beam energy. WARNING: 'scherzer' is a
-	# silent no-op when C30 == 0 (the formula evaluates to 0); the probe
-	# builder emits a runtime warning in that case so the "BF looks like
-	# DF" symptom can't recur without explanation.
+	# Probe defocus in Å, or 'scherzer' (computed from C30 + energy).
 	defocus: float | str = Field(default="scherzer")
-	# Phase-aberration coefficients passed straight through to
-	# abtem.Probe(aberrations=...). All values are in Ångström (or
-	# radians for the angular phi terms), matching abtem's convention.
-	# Common keys: 'C30' (= spherical aberration, Cs), 'C50', 'C12'
-	# (twofold astigmatism), 'phi12' (its angle), 'C32', 'C34', etc.
-	# Defocus is NOT set here — use the top-level `defocus` field above
-	# instead, so the 'scherzer' magic stays consistent. If a 'defocus' /
-	# 'C10' key appears in this dict, it's an error.
+	# Phase aberrations passed to abtem.Probe(aberrations=...). Defocus / C10
+	# are rejected — use the `defocus` field above.
 	aberrations: dict[str, float] = Field(default_factory=dict)
 
 	@field_validator("defocus", mode="before")
 	@classmethod
 	def validate_defocus(cls, v: Any):
-		# A number, or the literal string 'scherzer' (case-insensitive).
-		# mode='before' so we see the raw value before pydantic coerces
-		# bool -> int -> float (True would otherwise slip through as 1.0).
+		# mode='before' so bool doesn't slip through as 1.0 via pydantic coercion.
 		if isinstance(v, bool):
 			raise ValueError("defocus cannot be a bool")
 		if isinstance(v, str):
 			if v.lower() == "scherzer":
 				return "scherzer"
-			raise ValueError(
-				f"defocus as a string must be 'scherzer', got {v!r}"
-			)
+			raise ValueError(f"defocus as a string must be 'scherzer', got {v!r}")
 		return float(v)
 
 	@field_validator("aberrations")
 	@classmethod
 	def validate_aberrations(cls, v: Any):
-		# Reject defocus / C10 here — they go through the dedicated
-		# `defocus` field so the 'scherzer' magic stays in one place.
 		if not isinstance(v, dict):
 			raise ValueError("aberrations must be a dict")
 		for k in ("defocus", "C10"):
 			if k in v:
-				raise ValueError(
-					f"set defocus via microscope.defocus, not "
-					f"microscope.aberrations[{k!r}]"
-				)
-		# Check keys against abtem's actual supported set rather than a
-		# hardcoded mirror — abtem is the source of truth, no risk of drift
-		# when it widens the set. Lazy import so an empty / unset aberrations
-		# dict still validates without abtem installed (schema-only smoke).
+				raise ValueError(f"set defocus via microscope.defocus, not aberrations[{k!r}]")
+		# Lazy import so empty / unset aberrations validates without abtem.
 		if v:
 			from abtem.transfer import polar_aliases
-			valid_named = set(polar_aliases.keys())
-			valid_polar = set(polar_aliases.values())
-			valid = (valid_named | valid_polar) - {"defocus", "C10"}
+			valid = (set(polar_aliases) | set(polar_aliases.values())) - {"defocus", "C10"}
 			for k, val in v.items():
 				if k not in valid:
-					raise ValueError(
-						f"aberrations[{k!r}] is not a known abtem aberration "
-						f"symbol. Polar symbols: {sorted(valid_polar)!r}; "
-						f"named aliases: {sorted(valid_named)!r}."
-					)
+					raise ValueError(f"aberrations[{k!r}] is not a known abtem aberration symbol")
 				if isinstance(val, bool) or not isinstance(val, (int, float)):
-					raise ValueError(
-						f"aberrations[{k!r}] must be numeric, got {type(val).__name__}"
-					)
+					raise ValueError(f"aberrations[{k!r}] must be numeric")
 		return {k: float(v) for k, v in v.items()}
 
 	@field_validator("detectors")

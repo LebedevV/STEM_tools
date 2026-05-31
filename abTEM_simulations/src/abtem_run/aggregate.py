@@ -202,12 +202,8 @@ def aggregate_job(job_dir) -> None:
 		if cbed_mean is not None:
 			_write_pattern_preview(cbed_mean, cfg, agg_dir, "cbed", "CBED", figsize=(8, 6))
 
-	# 4. Projected potential preview(s). Default is the phonon-averaged
-	#    projection: the mean of each seed's seed_*_potproj.zarr, i.e. the
-	#    projection of the potentials actually propagated through (matches the
-	#    simulation, not an idealised lattice). The probe-shape side panel
-	#    needs a grid, so the ground-state potential is built once and reused
-	#    for the probe + the optional static-lattice projection.
+	# 4. Projection preview(s). Build the ground-state potential once for
+	#    the probe-shape side panel and reuse for the optional static one.
 	mean_proj = _mean_zarr_channel(out_dir, "potproj")
 	if mean_proj is not None or cfg.simulations.emit_static_baseline:
 		static_potential = make_potential(
@@ -219,11 +215,6 @@ def aggregate_job(job_dir) -> None:
 			_write_projection(mean_proj, probe, cfg, agg_dir,
 				"potential_projection", "phonon-averaged projection")
 
-		# emit_static_baseline: a separate static-lattice projection preview,
-		# kept on its own and never averaged with the per-seed runs. No
-		# static-lattice SCAN is emitted from here — running multislice in the
-		# aggregator duplicates the worker pipeline's job. A static scan can
-		# be obtained via a separate run with frozen_phonons = "None".
 		if cfg.simulations.emit_static_baseline:
 			static_proj = static_potential.project().to_cpu().compute()
 			_write_projection(static_proj, probe, cfg, agg_dir,
