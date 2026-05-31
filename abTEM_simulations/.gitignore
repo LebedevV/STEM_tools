@@ -10,3 +10,4 @@ out_full/
 venv/
 .ruff_cache/
 docs/worker.md
+docs/_build/

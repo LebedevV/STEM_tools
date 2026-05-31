@@ -71,6 +71,11 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.0",
 ]
+docs = [
+    "sphinx>=7",
+    "furo>=2024.0",
+    "myst-parser>=2",
+]
 
 [tool.mypy]
 python_version = "3.11"
