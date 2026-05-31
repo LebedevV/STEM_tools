@@ -74,8 +74,7 @@ cd abTEM_simulations          # CWD must contain config.toml (or pass --config)
 planning artifacts (`surf.xyz`, `combined.png`) without burning GPU time.
 `--resume <run_dir>` picks up any remaining `.todo` seeds in an existing
 generator output directory and aggregates each job — idempotent on
-already-complete sweeps. `--no-estimate` suppresses the pre-flight cost
-block that prints before the generator runs.
+already-complete sweeps.
 
 ### Worker-era CLIs (parallel / cluster)
 
