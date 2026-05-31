@@ -49,20 +49,12 @@ from .simulation import add_probe, build_lamella_from_config
 
 
 def _collect_seed_zarrs(out_dir: Path, archive_dir: Path, channel_name: str) -> list[Path]:
-	"""All ``seed_*_<channel>.zarr`` from outputs/ AND outputs_archive/,
-	sorted by seed integer for deterministic ordering.
-
-	Cumulative-aggregation entry point. After the first aggregator pass,
-	per-seed files live in outputs_archive/; a subsequent abtem-run-extend
-	batch lands fresh in outputs/. Both contribute to the mean. Duplicate
-	seeds shouldn't happen (extend refuses an already-present seed); if one
-	does, the outputs/ copy wins.
-	"""
+	"""``seed_*_<channel>.zarr`` from outputs/ ∪ outputs_archive/, sorted by
+	seed integer. outputs/ wins on a duplicate seed."""
 	def _seed_key(p: Path) -> int:
-		return int(p.stem.split("_")[1])  # seed_NNNNNN_<channel> -> NNNNNN
+		return int(p.stem.split("_")[1])
 
 	collected: dict[int, Path] = {}
-	# archive first so a current-batch outputs/ entry wins on collision
 	if archive_dir.exists():
 		for p in archive_dir.glob(f"seed_*_{channel_name}.zarr"):
 			collected[_seed_key(p)] = p
@@ -73,11 +65,7 @@ def _collect_seed_zarrs(out_dir: Path, archive_dir: Path, channel_name: str) -> 
 
 
 def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
-	"""Move everything in outputs/ into outputs_archive/ and remove outputs/.
-	Idempotent on a missing/empty outputs/. Lets a future abtem-run-extend
-	batch land in a fresh outputs/ while historical seeds stay queryable for
-	the next cumulative mean.
-	"""
+	"""Move outputs/ contents into outputs_archive/ and remove outputs/."""
 	if not out_dir.exists():
 		return
 	archive_dir.mkdir(parents=True, exist_ok=True)
@@ -94,8 +82,7 @@ def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
 
 def _mean_zarr_channel(out_dir: Path, archive_dir: Path, channel_name: str, *, max_seeds: int | None = None):
 	"""Cross-seed mean of ``seed_*_<channel_name>.zarr`` over outputs/ ∪
-	outputs_archive/; None if none exist. ``max_seeds`` (used by
-	aggregate_series) caps to the first N seeds (sorted by seed integer)."""
+	outputs_archive/; None if none exist. ``max_seeds`` caps to the first N."""
 	zarr_files = _collect_seed_zarrs(out_dir, archive_dir, channel_name)
 	if max_seeds is not None:
 		zarr_files = zarr_files[:max_seeds]
@@ -103,8 +90,7 @@ def _mean_zarr_channel(out_dir: Path, archive_dir: Path, channel_name: str, *, m
 		return None
 
 	measurements = [abtem.from_zarr(str(f)) for f in zarr_files]
-	# .compute() now: downstream gaussian_filter needs a concrete numpy array
-	# (scipy's pad chokes on a dask backing).
+	# .compute(): downstream gaussian_filter wants a concrete numpy array.
 	mean = abtem.stack(measurements).mean(axis=0)
 	return mean.compute() if hasattr(mean, "compute") else mean
 
@@ -120,11 +106,8 @@ def _emit_channel(
 	blur_boundary: str = "nearest",
 	max_seeds: int | None = None,
 ):
-	"""Aggregate one channel; write {channel}.{tif,zarr} (+ blurred TIFFs if
-	requested) and return the cross-seed mean (or None if no seeds produced
-	this channel — used for "no data, skip"; an abtem read/stack/mean error
-	would raise, not return None). ``max_seeds`` (used by aggregate_series)
-	limits the mean to the first ``max_seeds`` seeds (sorted by seed integer)."""
+	"""Write {channel}.{tif,zarr} (+ blurred TIFFs) for the cross-seed mean.
+	Returns the mean, or None if no per-seed zarrs exist for this channel."""
 	mean = _mean_zarr_channel(out_dir, archive_dir, channel_name, max_seeds=max_seeds)
 	if mean is None:
 		return None
@@ -171,17 +154,9 @@ def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, kind_label: st
 
 
 def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, target_dir: Path) -> None:
-	"""Projection-preview block shared by aggregate_job + aggregate_series.
-
-	Writes the phonon-averaged projection (mean of ``seed_*_potproj.zarr``)
-	at ``target_dir/potential_projection.*`` and, if
-	``simulations.emit_static_baseline``, a separate static-lattice projection
-	at ``target_dir/potential_projection_static.*``. No-op if neither applies.
-
-	The probe-shape side panel needs a grid, so the static ground-state
-	potential is built once here (one cheap build) and reused for both the
-	probe and the optional static baseline.
-	"""
+	"""Phonon-averaged projection at ``target_dir/potential_projection.*``,
+	plus a static-lattice one at ``..._static.*`` if ``emit_static_baseline``.
+	No-op if neither applies."""
 	mean_proj = _mean_zarr_channel(out_dir, archive_dir, "potproj")
 	if mean_proj is None and not cfg.simulations.emit_static_baseline:
 		return
