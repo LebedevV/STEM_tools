@@ -517,25 +517,25 @@ def _build_probe(ctx, *, defocus_override=None):
 
 	``defocus_override`` lets explicit callers (the legacy add_probe(...,
 	defocus=N) path) supply a defocus that takes precedence over
-	ctx.defocus, without going through the scherzer-warning check.
+	ctx.defocus. The scherzer-with-C30=0 warning fires on the resolved
+	value either way — an explicit ``defocus='scherzer'`` override is the
+	same misconfiguration the warning catches.
 	"""
 	aberrations = dict(ctx.aberrations)
 	c30 = float(aberrations.get("C30", 0.0))
-	if defocus_override is None:
-		if isinstance(ctx.defocus, str) and ctx.defocus.lower() == "scherzer" and c30 == 0.0:
-			warnings.warn(
-				"microscope.defocus='scherzer' is a no-op when "
-				"microscope.aberrations.C30 is 0 (Scherzer formula evaluates "
-				"to 0). The resulting probe is in-focus with no aberrations, "
-				"which can give the 'BF looks like DF' inverted-center "
-				"artifact on thin samples. Set aberrations.C30 to a non-zero "
-				"value (typical uncorrected 200 kV: 1.0e7 Å) or set defocus "
-				"to an explicit number in Å.",
-				stacklevel=2,
-			)
-		aberrations["defocus"] = _resolve_defocus(ctx.defocus, c30, ctx.HT_value)
-	else:
-		aberrations["defocus"] = _resolve_defocus(defocus_override, c30, ctx.HT_value)
+	defocus_in = defocus_override if defocus_override is not None else ctx.defocus
+	if isinstance(defocus_in, str) and defocus_in.lower() == "scherzer" and c30 == 0.0:
+		warnings.warn(
+			"microscope.defocus='scherzer' is a no-op when "
+			"microscope.aberrations.C30 is 0 (Scherzer formula evaluates "
+			"to 0). The resulting probe is in-focus with no aberrations, "
+			"which can give the 'BF looks like DF' inverted-center "
+			"artifact on thin samples. Set aberrations.C30 to a non-zero "
+			"value (typical uncorrected 200 kV: 1.0e7 Å) or set defocus "
+			"to an explicit number in Å.",
+			stacklevel=2,
+		)
+	aberrations["defocus"] = _resolve_defocus(defocus_in, c30, ctx.HT_value)
 	return abtem.Probe(
 		energy=ctx.HT_value,
 		semiangle_cutoff=ctx.convergence_angle,
@@ -550,8 +550,9 @@ def add_probe(ctx, potential, defocus=None):
 	``ctx.defocus`` / ``ctx.aberrations`` (the single source of truth shared
 	with the worker). Passing an explicit ``defocus=`` (float or 'scherzer')
 	keeps the pre-Q3 calling convention for external callers; the value
-	overrides ctx.defocus for that one probe, with no scherzer-with-C30=0
-	warning (the caller has stated what they want).
+	overrides ctx.defocus for that one probe. The scherzer-with-C30=0
+	warning still fires on the resolved value, so an explicit
+	``defocus='scherzer'`` doesn't silently slip past the check.
 	"""
 	probe = _build_probe(ctx, defocus_override=defocus)
 	probe.grid.match(potential)
