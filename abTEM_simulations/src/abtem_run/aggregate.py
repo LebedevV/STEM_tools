@@ -30,7 +30,6 @@ Library:
 import argparse
 import shutil
 import sys
-import warnings
 from pathlib import Path
 
 import abtem
@@ -39,10 +38,6 @@ import matplotlib.pyplot as plt
 from .config import load_config
 from .pipeline import BLUR_SIGMAS, make_potential, resolve_context
 from .simulation import add_probe, build_lamella_from_config
-# Worker-side building blocks reused by the static-baseline scan path: the
-# detector list-builder + the canonical scan implementation. Importing
-# avoids duplicating the probe/scan/detector construction we already trust.
-from .worker import _detector_objects, run_scan
 
 
 # --------------------------------------------------------------------------- #
@@ -115,43 +110,6 @@ def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, kind_label: st
 	proj_cropped.to_tiff(str(agg_dir / f"{stem}_scanned.tif"))
 
 
-def _emit_static_scan(ctx, potential, agg_dir: Path) -> None:
-	"""Run ONE scan over the static (no-displacement) potential and write
-	``aggregate/<det>_static.{tif,zarr}`` (+ blurred TIFFs) for each
-	configured scan detector.
-
-	One extra multislice per job, regardless of seed count. Reuses the same
-	scan path the worker takes — ``_detector_objects`` + ``run_scan`` — so the
-	static baseline lines up exactly with the phonon-averaged channels (same
-	probe, same scan grid, same detector objects).
-
-	No-op (with a warning) when ``do_full_run`` is off or ``detectors`` is
-	empty: the static-baseline scan needs the same configured detectors the
-	phonon-averaged scan would use, and silently skipping it would surprise a
-	user who set ``emit_static_baseline=true`` expecting a static channel.
-	"""
-	if not (ctx.do_full_run and ctx.detectors):
-		warnings.warn(
-			"emit_static_baseline=true but do_full_run is off or detectors is "
-			"empty; the static-lattice projection is still written, but the "
-			"static-lattice scan (aggregate/<det>_static.*) is SKIPPED — "
-			"there is no detector list to scan with. Set do_full_run=true and "
-			"detectors=[...] if you want the static scan output too.",
-			stacklevel=2,
-		)
-		return
-	detector_objs = _detector_objects(ctx, ctx.detectors)
-	measurements = run_scan(ctx, potential, detector_objs)
-	for det_name, m in zip(ctx.detectors, measurements):
-		cpu = m.copy().to_cpu()
-		cpu.to_tiff(str(agg_dir / f"{det_name}_static.tif"))
-		cpu.to_zarr(str(agg_dir / f"{det_name}_static.zarr"), overwrite=True)
-		for sigma in BLUR_SIGMAS:
-			tag = str(sigma).replace(".", "-")
-			blurred = cpu.gaussian_filter(sigma, boundary=ctx.blur_boundary)
-			blurred.to_tiff(str(agg_dir / f"{det_name}_static_{tag}.tif"))
-
-
 def _write_pattern_preview(measurement, cfg, agg_dir: Path, stem: str,
 		kind_label: str, *, figsize: tuple[float, float]) -> None:
 	"""Matplotlib PNG preview for a 2D diffraction-style measurement (averaged
@@ -190,8 +148,7 @@ def aggregate_job(job_dir) -> None:
 		5. If ``do_cbed``: same for ``cbed``, plus a ``cbed.png`` preview.
 		6. Mean ``seed_*_potproj.zarr`` into the phonon-averaged projection
 		   preview; if ``emit_static_baseline``, also a separate static
-		   projection AND one static-lattice scan
-		   (``aggregate/<det>_static.{tif,zarr}``).
+		   projection preview from the same ground-state potential.
 		7. Delete ``outputs/`` unless ``simulations.test_enabled``.
 
 	Raises:
@@ -248,9 +205,9 @@ def aggregate_job(job_dir) -> None:
 	# 4. Projected potential preview(s). Default is the phonon-averaged
 	#    projection: the mean of each seed's seed_*_potproj.zarr, i.e. the
 	#    projection of the potentials actually propagated through (matches the
-	#    simulation, not an idealised lattice). The probe-shape side panel needs
-	#    a grid, so build the ground-state potential once here (one cheap build)
-	#    and reuse it for both the probe and the optional static baseline.
+	#    simulation, not an idealised lattice). The probe-shape side panel
+	#    needs a grid, so the ground-state potential is built once and reused
+	#    for the probe + the optional static-lattice projection.
 	mean_proj = _mean_zarr_channel(out_dir, "potproj")
 	if mean_proj is not None or cfg.simulations.emit_static_baseline:
 		static_potential = make_potential(
@@ -262,15 +219,15 @@ def aggregate_job(job_dir) -> None:
 			_write_projection(mean_proj, probe, cfg, agg_dir,
 				"potential_projection", "phonon-averaged projection")
 
-		# emit_static_baseline: a separate static-lattice projection, kept on
-		# its own and never averaged with the per-seed runs. The same
-		# already-built static_potential also feeds an extra static-lattice
-		# scan (one multislice per job) when do_full_run is set.
+		# emit_static_baseline: a separate static-lattice projection preview,
+		# kept on its own and never averaged with the per-seed runs. No
+		# static-lattice SCAN is emitted from here — running multislice in the
+		# aggregator duplicates the worker pipeline's job. A static scan can
+		# be obtained via a separate run with frozen_phonons = "None".
 		if cfg.simulations.emit_static_baseline:
 			static_proj = static_potential.project().to_cpu().compute()
 			_write_projection(static_proj, probe, cfg, agg_dir,
 				"potential_projection_static", "static lattice projection")
-			_emit_static_scan(ctx, static_potential, agg_dir)
 
 	# 5. Cleanup unless test mode is on
 	if not ctx.test_enabled:
