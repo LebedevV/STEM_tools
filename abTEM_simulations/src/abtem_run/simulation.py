@@ -3,6 +3,8 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
+import warnings
+
 import ase
 import numpy as np
 import diffpy.structure
@@ -204,8 +206,101 @@ def get_euler_uvw(param_list,uvw):
 	return rot
 
 
+def compute_inplane_angle_from_hkl(rot_matrix, param_list, hkl_align, axis='y'):
+	"""Compute the in-plane rotation angle (degrees) that lands the projection
+	of crystallographic plane normal ``hkl_align`` on the requested lab axis,
+	after the out-of-plane rotation R has been applied.
+
+	"This hkl up" alignment: keep the main rotation R unchanged (built from
+	the user's viewing direction in make_lamella), then derive the in-plane
+	angle from R and the user's desired in-plane reference hkl. The angle
+	returned is the value that would have been supplied as ``inplane_angle``
+	to make_lamella to get the same effect — make_lamella's existing
+	in-plane rotation path consumes it transparently.
+
+	Parameters
+	----------
+	rot_matrix : (3,3) ndarray
+		The out-of-plane rotation matrix R built by get_euler_uvw. After R,
+		the structure's viewing direction (uvw or normal to hkl) is aligned
+		with +Z.
+	param_list : tuple
+		Lattice parameters ``(a, b, c, alpha, beta, gamma)`` — same ones
+		passed to get_euler_uvw / hkl_to_uvw.
+	hkl_align : list[int]
+		Miller indices of the plane whose normal direction is to land on
+		the chosen lab axis. Must not be [0,0,0]. Negative indices are
+		fine.
+	axis : {'x', 'y'}
+		Which lab axis to align the in-plane projection onto. Default 'y'
+		(consistent with the "this hkl up" framing — Y is the vertical
+		screen axis in the convention used by ase/abtem images).
+
+	Returns
+	-------
+	float
+		The in-plane rotation angle in degrees. Pass through to
+		make_lamella as ``inplane_angle``.
+
+	Raises
+	------
+	ValueError
+		hkl_align is not a 3-element int list, is [0,0,0], or projects to
+		numerically zero in the XY plane after R (i.e. hkl_align is nearly
+		parallel to the viewing direction — its in-plane direction is
+		undefined).
+
+	Notes
+	-----
+	The hkl -> cartesian step uses diffpy's metric tensor, so non-orthogonal
+	cells are handled — but the non-orthogonal branches share the
+	"not properly tested" caveat on ``get_euler_uvw``.
+	"""
+	if not (isinstance(hkl_align, (list, tuple)) and len(hkl_align) == 3 and all(isinstance(x, int) for x in hkl_align)):
+		raise ValueError(f"hkl_align must be 3 ints, got {hkl_align!r}")
+	if all(x == 0 for x in hkl_align):
+		raise ValueError("hkl_align cannot be [0,0,0] — undefined direction")
+	if axis not in ("x", "y"):
+		raise ValueError(f"axis must be 'x' or 'y', got {axis!r}")
+
+	lat = diffpy.structure.Lattice(
+		param_list[0], param_list[1], param_list[2],
+		param_list[3], param_list[4], param_list[5],
+	)
+	lat_r = lat.reciprocal()
+	v_real = np.asarray(lat_r.cartesian(hkl_align), dtype=float)
+	v_rot = np.asarray(rot_matrix) @ v_real
+	v_x, v_y = float(v_rot[0]), float(v_rot[1])
+
+	in_plane_mag = (v_x * v_x + v_y * v_y) ** 0.5
+	# Hard cutoff: if hkl is essentially the viewing direction, refuse.
+	if in_plane_mag < 1e-6:
+		raise ValueError(
+			f"hkl_align={list(hkl_align)} projects to zero in the XY plane "
+			f"after the out-of-plane rotation; it is (nearly) parallel to "
+			f"the viewing direction, so its in-plane direction is undefined."
+		)
+	# Soft warning: small but non-zero — angle is numerically noisy.
+	if in_plane_mag < 1e-3:
+		warnings.warn(
+			f"hkl_align={list(hkl_align)} XY-projection magnitude is "
+			f"small ({in_plane_mag:.3e}); in-plane angle may be noisy.",
+			stacklevel=2,
+		)
+
+	# atan2(v_y, v_x) is the CCW angle of (v_x, v_y) from +X. make_lamella
+	# rotates atoms by `R.from_euler('z', -inplane_angle)`, so to land the
+	# vector on +X we set inplane_angle = atan2(v_y, v_x). For +Y, subtract
+	# 90° so that after rotation the vector ends at angle 90° = +Y.
+	phi_deg = float(np.degrees(np.arctan2(v_y, v_x)))
+	if axis == "x":
+		return phi_deg
+	return phi_deg - 90.0
+
+
 def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw,is_uvw=True,
-			inplane_angle=None,extra_shift_z=0,vac_xy=0,vac_z=0,global_tilt=(0,0),tilt_degrees=True):
+			inplane_angle=None,inplane_align_hkl=None,inplane_align_axis="y",
+			extra_shift_z=0,vac_xy=0,vac_z=0,global_tilt=(0,0),tilt_degrees=True):
 	'''
 	High-level function; for a given crystal structure, generates the rectangular set of atoms - 'lamella'
 		in such a way that the requested uvw is directed upwards
@@ -237,7 +332,18 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 	# !TODO validation of directions: how [uvw] here relates to the abTEM beam settings
 	rot = get_euler_uvw(param_list,uvw)
 	rot_matrix = rot.as_matrix()
-	
+
+	# "This hkl up" in-plane alignment. If the caller supplied
+	# inplane_align_hkl, derive the in-plane angle from R + the requested
+	# hkl direction and override inplane_angle.
+	# Precedence: inplane_align_hkl > inplane_angle > atom_to_zero auto.
+	if inplane_align_hkl is not None:
+		inplane_angle = compute_inplane_angle_from_hkl(
+			rot_matrix, param_list, list(inplane_align_hkl), axis=inplane_align_axis,
+		)
+		print(f'inplane_align_hkl={list(inplane_align_hkl)}@{inplane_align_axis} '
+			f'-> inplane_angle={inplane_angle:.4f} deg')
+
 	#Create supercell
 	sup = get_supercell(cif_path,sblock_size)
 	da_atoms = da.from_array(sup.get_positions(), chunks=(100000, 3))
@@ -369,11 +475,39 @@ def make_lamella(cif_path,hkl,sblock_size,lamella_sizes,atom_to_zero,tol,max_uvw
 	return fin_cell
 	
 
-def add_probe(ctx, potential, defocus="scherzer"):
+def _resolve_defocus(defocus, c30, energy):
+	"""Resolve ``defocus`` to a numeric Å value. ``'scherzer'`` evaluates
+	scherzer_defocus(C30, energy) explicitly — abtem 1.0.9 lets dict order
+	determine which C30 it sees, so we resolve ourselves to stay order-safe.
+	"""
+	if not (isinstance(defocus, str) and defocus.lower() == "scherzer"):
+		return float(defocus)
+	from abtem.transfer import scherzer_defocus
+	return float(scherzer_defocus(float(c30), float(energy)))
+
+
+def add_probe(ctx, potential, defocus=None):
+	"""Build an abtem.Probe from ctx and match its grid to ``potential``.
+
+	``defocus`` (float, ``'scherzer'``, or None=use ctx.defocus) overrides
+	ctx.defocus for this probe. Warns if the resolved defocus is
+	``'scherzer'`` with C30=0 — the formula evaluates to 0, giving an
+	in-focus probe (the "BF looks like DF" artifact).
+	"""
+	aberrations = dict(ctx.aberrations)
+	c30 = float(aberrations.get("C30", 0.0))
+	defocus_in = defocus if defocus is not None else ctx.defocus
+	if isinstance(defocus_in, str) and defocus_in.lower() == "scherzer" and c30 == 0.0:
+		warnings.warn(
+			"defocus='scherzer' is a no-op with aberrations.C30=0; "
+			"set C30 to a non-zero Å value or pass a numeric defocus.",
+			stacklevel=2,
+		)
+	aberrations["defocus"] = _resolve_defocus(defocus_in, c30, ctx.HT_value)
 	probe = abtem.Probe(
 		energy=ctx.HT_value,
 		semiangle_cutoff=ctx.convergence_angle,
-		defocus=defocus
+		aberrations=aberrations,
 	)
 	probe.grid.match(potential)
 	return probe
@@ -430,6 +564,8 @@ def build_lamella_from_config(cfg, hkl):
 		ls.max_uvw,
 		is_uvw=cfg.job.is_uvw,
 		inplane_angle=cfg.job.inplane_angle_resolved,
+		inplane_align_hkl=cfg.job.inplane_align_hkl,
+		inplane_align_axis=cfg.job.inplane_align_axis,
 		extra_shift_z=ls.extra_shift_z,
 		vac_xy=ls.borders,
 		vac_z=ls.borders,

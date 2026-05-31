@@ -7,7 +7,7 @@ __license__ = "GPL-v3"
 # Need to be edited only if new variables are added or config file is split
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import tomllib
 from pydantic import BaseModel, Field, field_validator
@@ -26,6 +26,10 @@ class Job(BaseModel):
 	is_uvw: bool = Field()
 	phonons_seed: int = Field(default=0)
 	inplane_angle: float | str = Field(default=0.0)  # degrees, or 'auto'
+	# "This hkl up" alignment: lands the hkl normal's in-plane projection on
+	# inplane_align_axis ('x' or 'y'). Overrides inplane_angle when set.
+	inplane_align_hkl: list[int] | None = Field(default=None)
+	inplane_align_axis: Literal["x", "y"] = Field(default="y")
 
 	@field_validator("hkl_to_do")
 	@classmethod
@@ -39,6 +43,18 @@ class Job(BaseModel):
 					raise ValueError("Each HKL entry must be a list of 3 integers.")
 			return v
 		raise ValueError("hkl_to_do must be [h,k,l] or a list of [h,k,l] entries.")
+
+	@field_validator("inplane_align_hkl")
+	@classmethod
+	def validate_inplane_align_hkl(cls, v: Any):
+		# Reject [0,0,0] up front (would trip arctan2(0,0) downstream).
+		if v is None:
+			return None
+		if not (isinstance(v, list) and len(v) == 3 and all(isinstance(x, int) for x in v)):
+			raise ValueError("inplane_align_hkl must be a list of 3 ints or null")
+		if all(x == 0 for x in v):
+			raise ValueError("inplane_align_hkl cannot be [0,0,0] — undefined direction")
+		return v
 
 	@field_validator("inplane_angle")
 	@classmethod
@@ -80,10 +96,12 @@ class Simulations(BaseModel):
 	# test_enabled=true: aggregator keeps outputs/ intact instead of deleting
 	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
 	test_enabled: bool = Field(default=False)
-	# emit_static_baseline=true: also emit a separate static-lattice (no
-	# phonons) projected-potential reference, kept apart from the phonon-
-	# averaged result. (Reserved to also gate a static-lattice scan baseline.)
+	# emit_static_baseline=true: also write aggregate/potential_projection_static.*
+	# alongside the phonon-averaged projection.
 	emit_static_baseline: bool = Field(default=False)
+	# Boundary mode for the gaussian-blur TIFF variants. Threaded into
+	# abtem.Images.gaussian_filter(boundary=...).
+	blur_boundary: Literal["nearest", "constant", "reflect", "wrap"] = Field(default="nearest")
 
 class Microscope(BaseModel):
 	HT_value: int | list[int ] = Field()
@@ -103,6 +121,42 @@ class Microscope(BaseModel):
 	abfouter: float = Field()
 	bfinner: float = Field()
 	bfouter: float = Field()
+	# Probe defocus in Å, or 'scherzer' (computed from C30 + energy).
+	defocus: float | str = Field(default="scherzer")
+	# Phase aberrations passed to abtem.Probe(aberrations=...). Defocus / C10
+	# are rejected — use the `defocus` field above.
+	aberrations: dict[str, float] = Field(default_factory=dict)
+
+	@field_validator("defocus", mode="before")
+	@classmethod
+	def validate_defocus(cls, v: Any):
+		# mode='before' so bool doesn't slip through as 1.0 via pydantic coercion.
+		if isinstance(v, bool):
+			raise ValueError("defocus cannot be a bool")
+		if isinstance(v, str):
+			if v.lower() == "scherzer":
+				return "scherzer"
+			raise ValueError(f"defocus as a string must be 'scherzer', got {v!r}")
+		return float(v)
+
+	@field_validator("aberrations")
+	@classmethod
+	def validate_aberrations(cls, v: Any):
+		if not isinstance(v, dict):
+			raise ValueError("aberrations must be a dict")
+		for k in ("defocus", "C10"):
+			if k in v:
+				raise ValueError(f"set defocus via microscope.defocus, not aberrations[{k!r}]")
+		# Lazy import so empty / unset aberrations validates without abtem.
+		if v:
+			from abtem.transfer import polar_aliases
+			valid = (set(polar_aliases) | set(polar_aliases.values())) - {"defocus", "C10"}
+			for k, val in v.items():
+				if k not in valid:
+					raise ValueError(f"aberrations[{k!r}] is not a known abtem aberration symbol")
+				if isinstance(val, bool) or not isinstance(val, (int, float)):
+					raise ValueError(f"aberrations[{k!r}] must be numeric")
+		return {k: float(v) for k, v in v.items()}
 
 	@field_validator("detectors")
 	@classmethod

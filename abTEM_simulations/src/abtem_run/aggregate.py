@@ -58,7 +58,8 @@ def _mean_zarr_channel(out_dir: Path, channel_name: str):
 	return mean.compute() if hasattr(mean, "compute") else mean
 
 
-def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs: bool):
+def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *,
+		with_blurs: bool, blur_boundary: str = "nearest"):
 	"""Aggregate one channel; write {channel}.{tif,zarr} (+ blurred TIFFs if
 	requested) and return the cross-seed mean (or None if no seeds produced
 	this channel — used for "no data, skip"; an abtem read/stack/mean error
@@ -74,7 +75,7 @@ def _emit_channel(out_dir: Path, agg_dir: Path, channel_name: str, *, with_blurs
 		# Same blur set as the legacy save_images.
 		for sigma in BLUR_SIGMAS:
 			tag = str(sigma).replace(".", "-")
-			blurred = mean.gaussian_filter(sigma, boundary="constant")
+			blurred = mean.gaussian_filter(sigma, boundary=blur_boundary)
 			blurred.to_tiff(str(agg_dir / f"{channel_name}_{tag}.tif"))
 	return mean
 
@@ -146,7 +147,8 @@ def aggregate_job(job_dir) -> None:
 		4. If ``do_diffraction``: same for ``diff``, plus a ``diff.png`` preview.
 		5. If ``do_cbed``: same for ``cbed``, plus a ``cbed.png`` preview.
 		6. Mean ``seed_*_potproj.zarr`` into the phonon-averaged projection
-		   preview; if ``emit_static_baseline``, also a separate static one.
+		   preview; if ``emit_static_baseline``, also a separate static
+		   projection preview from the same ground-state potential.
 		7. Delete ``outputs/`` unless ``simulations.test_enabled``.
 
 	Raises:
@@ -186,7 +188,7 @@ def aggregate_job(job_dir) -> None:
 	# 1. Scan channels (with blurs)
 	if ctx.do_full_run:
 		for det_name in ctx.detectors:
-			_emit_channel(out_dir, agg_dir, det_name, with_blurs=True)
+			_emit_channel(out_dir, agg_dir, det_name, with_blurs=True, blur_boundary=ctx.blur_boundary)
 
 	# 2. Plane-wave diffraction
 	if ctx.do_diffraction:
@@ -200,12 +202,8 @@ def aggregate_job(job_dir) -> None:
 		if cbed_mean is not None:
 			_write_pattern_preview(cbed_mean, cfg, agg_dir, "cbed", "CBED", figsize=(8, 6))
 
-	# 4. Projected potential preview(s). Default is the phonon-averaged
-	#    projection: the mean of each seed's seed_*_potproj.zarr, i.e. the
-	#    projection of the potentials actually propagated through (matches the
-	#    simulation, not an idealised lattice). The probe-shape side panel needs
-	#    a grid, so build the ground-state potential once here (one cheap build)
-	#    and reuse it for both the probe and the optional static baseline.
+	# 4. Projection preview(s). Build the ground-state potential once for
+	#    the probe-shape side panel and reuse for the optional static one.
 	mean_proj = _mean_zarr_channel(out_dir, "potproj")
 	if mean_proj is not None or cfg.simulations.emit_static_baseline:
 		static_potential = make_potential(
@@ -217,8 +215,6 @@ def aggregate_job(job_dir) -> None:
 			_write_projection(mean_proj, probe, cfg, agg_dir,
 				"potential_projection", "phonon-averaged projection")
 
-		# emit_static_baseline: a separate static-lattice projection, kept on
-		# its own and never averaged with the per-seed runs.
 		if cfg.simulations.emit_static_baseline:
 			static_proj = static_potential.project().to_cpu().compute()
 			_write_projection(static_proj, probe, cfg, agg_dir,

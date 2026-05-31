@@ -30,11 +30,27 @@ def _phase_stem(phase: str) -> str:
         return phase[:-4]
     return phase
 
+def _strip_none(data):
+    """Recursively drop dict entries whose value is None.
+
+    TOML has no null type; tomli_w raises TypeError on None. Optional fields
+    like cfg.job.inplane_align_hkl default to None and that's the natural
+    pydantic representation, so the right fix is to omit them from the
+    serialized TOML rather than coerce to a sentinel. The reader
+    (load_config + pydantic) re-defaults them on the next load.
+    """
+    if isinstance(data, dict):
+        return {k: _strip_none(v) for k, v in data.items() if v is not None}
+    if isinstance(data, list):
+        return [_strip_none(v) for v in data]
+    return data
+
+
 def _atomic_write_toml(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     with tmp.open("wb") as f:
-        tomli_w.dump(data, f)
+        tomli_w.dump(_strip_none(data), f)
     os.replace(tmp, path)
 
 

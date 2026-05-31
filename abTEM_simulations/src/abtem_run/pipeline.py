@@ -29,6 +29,8 @@ class RunContext:
 	do_cbed: bool
 	detectors: list[str]
 	test_enabled: bool
+	blur_boundary: str
+	emit_static_baseline: bool
 	override_sampling: float | bool
 
 	# resolved lamella geometry
@@ -40,6 +42,8 @@ class RunContext:
 
 	convergence_angle: float
 	cbed_max_angle: float | str
+	defocus: float | str
+	aberrations: dict
 
 	# resolved detectors (abtem objects)
 	haadf_detector: object
@@ -109,6 +113,8 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 	do_cbed = cfg.microscope.do_cbed
 	detectors = cfg.microscope.detectors
 	test_enabled = cfg.simulations.test_enabled
+	blur_boundary = cfg.simulations.blur_boundary
+	emit_static_baseline = cfg.simulations.emit_static_baseline
 	override_sampling = cfg.simulations.override_sampling
 
 	borders = cfg.lamella_settings.borders
@@ -183,6 +189,8 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		do_cbed=do_cbed,
 		detectors=detectors,
 		test_enabled=test_enabled,
+		blur_boundary=blur_boundary,
+		emit_static_baseline=emit_static_baseline,
 		override_sampling=override_sampling,
 		scan_start=scan_start,
 		scan_stop=scan_stop,
@@ -191,6 +199,8 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 		tilt_degrees=cfg.lamella_settings.tilt_degrees,
 		convergence_angle=cfg.microscope.convergence_angle,
 		cbed_max_angle=cfg.microscope.cbed_max_angle,
+		defocus=cfg.microscope.defocus,
+		aberrations=dict(cfg.microscope.aberrations),
 		haadf_detector=haadf_detector,
 		abf_detector=abf_detector,
 		bf_detector=bf_detector,
