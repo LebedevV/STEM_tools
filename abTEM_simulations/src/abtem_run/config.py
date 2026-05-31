@@ -21,7 +21,7 @@ class Paths(BaseModel):
 	
 class Job(BaseModel):
 	"""Job-defining parameters (one per config TOML)."""
-	phase: str = Field()
+	phase: str | list[str] = Field()
 	hkl_to_do: list[int] | list[list[int]] = Field()
 	is_uvw: bool = Field()
 	phonons_seed: int = Field(default=0)
@@ -30,6 +30,38 @@ class Job(BaseModel):
 	# inplane_align_axis ('x' or 'y'). Overrides inplane_angle when set.
 	inplane_align_hkl: list[int] | None = Field(default=None)
 	inplane_align_axis: Literal["x", "y"] = Field(default="y")
+
+	@field_validator("phase")
+	@classmethod
+	def validate_phase(cls, v: Any):
+		# Single CIF name (str) or non-empty list of CIF names.
+		if isinstance(v, str):
+			if not v.strip():
+				raise ValueError("phase string must not be empty")
+			return v
+		if isinstance(v, list):
+			if not v:
+				raise ValueError("phase list must not be empty")
+			for p in v:
+				if not isinstance(p, str) or not p.strip():
+					raise ValueError(
+						f"every entry in phase list must be a non-empty string, "
+						f"got {p!r}"
+					)
+			# de-dup while preserving order — otherwise the generator emits
+			# duplicate job dirs for the same phase, which collides on disk
+			# because the dir name is derived from the phase stem.
+			seen: set[str] = set()
+			deduped = []
+			for p in v:
+				if p not in seen:
+					seen.add(p)
+					deduped.append(p)
+			return deduped
+		raise ValueError(
+			f"phase must be a string or a non-empty list of strings, got "
+			f"{type(v).__name__}"
+		)
 
 	@field_validator("hkl_to_do")
 	@classmethod
@@ -68,11 +100,25 @@ class Job(BaseModel):
 		return float(v)
 
 	@property
+	def phase_list(self) -> list[str]:
+		"""`phase` normalized to a list regardless of input shape. The generator
+		iterates over this; downstream per-job TOMLs always carry a single
+		scalar phase."""
+		if isinstance(self.phase, str):
+			return [self.phase]
+		return list(self.phase)
+
+	@property
 	def hkl_list(self) -> list[list[int]]:
 		"""hkl_to_do normalized to list-of-lists regardless of input shape."""
-		if len(self.hkl_to_do) == 3 and all(isinstance(x, int) for x in self.hkl_to_do):
-			return [list(self.hkl_to_do)]  # type: ignore[list-item]
-		return [list(row) for row in self.hkl_to_do]
+		# Narrow via isinstance checks instead of relying on `# type: ignore`
+		# so mypy can follow the type discrimination cleanly.
+		v = self.hkl_to_do
+		if len(v) == 3 and all(isinstance(x, int) for x in v):
+			# Flat [h,k,l]: every element is an int.
+			return [[int(x) for x in v]]  # type: ignore[arg-type]
+		# Nested [[h,k,l], ...]: every element is itself a list[int].
+		return [list(row) for row in v]  # type: ignore[arg-type]
 
 	@property
 	def inplane_angle_resolved(self) -> float | None:

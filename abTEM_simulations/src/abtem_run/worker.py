@@ -34,6 +34,7 @@ import abtem
 import ase.io
 import numpy as np
 
+from ._log import configure_default_logging
 from .config import load_config
 from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, add_scan, build_lamella_from_config
@@ -250,6 +251,7 @@ def run_one_seed(job_dir, todo_path) -> None:
 
 def main():
 	"""``abtem-run-worker`` console-script entry."""
+	configure_default_logging()
 	parser = argparse.ArgumentParser(
 		description=(
 			"abtem-run worker: process one .todo, write per-seed outputs to "

@@ -22,12 +22,17 @@ CLI:
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
+from ._log import configure_default_logging
 from .aggregate import aggregate_job, aggregate_series
 from .generator_run import generate_run
 from .worker import run_one_seed
+
+
+log = logging.getLogger(__name__)
 
 
 __all__ = ["main", "run_pipeline"]
@@ -76,11 +81,11 @@ def run_pipeline(
 		raise ValueError("generate_only cannot be combined with resume_dir")
 
 	if resume_dir is None:
-		print(f"abtem-run: generating queue from {config_path}")
+		log.info(f"abtem-run: generating queue from {config_path}")
 		run_dir = generate_run(config_path)
-		print(f"abtem-run: queue at {run_dir}")
+		log.info(f"abtem-run: queue at {run_dir}")
 		if generate_only:
-			print("abtem-run: stopping after generation (--generate-only).")
+			log.info("abtem-run: stopping after generation (--generate-only).")
 			return run_dir
 	else:
 		run_dir = Path(resume_dir).resolve()
@@ -92,35 +97,36 @@ def run_pipeline(
 				f"No job directories (subdir/seeds/) under {run_dir}. "
 				"Is this really a 'gen_<UTC>/' directory?"
 			)
-		print(f"abtem-run: resuming {run_dir}")
+		log.info(f"abtem-run: resuming {run_dir}")
 
 	job_dirs = sorted(p for p in run_dir.iterdir() if p.is_dir())
-	print(f"abtem-run: {len(job_dirs)} job(s) to process")
+	log.info(f"abtem-run: {len(job_dirs)} job(s) to process")
 
 	for job_dir in job_dirs:
 		todos = sorted((job_dir / "seeds").glob("*.todo"))
 		if todos:
-			print(f"abtem-run: [{job_dir.name}] {len(todos)} seed(s) to run")
+			log.info(f"abtem-run: [{job_dir.name}] {len(todos)} seed(s) to run")
 			for todo in todos:
-				print(f"abtem-run: [{job_dir.name}]   {todo.name}")
+				log.info(f"abtem-run: [{job_dir.name}]   {todo.name}")
 				run_one_seed(job_dir, todo)
 		else:
-			print(f"abtem-run: [{job_dir.name}] all seeds done")
+			log.info(f"abtem-run: [{job_dir.name}] all seeds done")
 
 		# If outputs/ is gone, a previous aggregator already archived it —
 		# nothing fresh to re-aggregate (use --aggregate to force a rebuild).
 		if not (job_dir / "outputs").exists():
-			print(f"abtem-run: [{job_dir.name}] outputs/ missing — aggregate already run; skipping")
+			log.info(f"abtem-run: [{job_dir.name}] outputs/ missing — aggregate already run; skipping")
 			continue
-		print(f"abtem-run: [{job_dir.name}] aggregating")
+		log.info(f"abtem-run: [{job_dir.name}] aggregating")
 		aggregate_job(job_dir)
 
-	print("abtem-run: finished")
+	log.info("abtem-run: finished")
 	return run_dir
 
 
 def main():
 	"""``abtem-run`` console-script entry."""
+	configure_default_logging()
 	parser = argparse.ArgumentParser(
 		description=(
 			"abtem-run: in-process pipeline driver. "
@@ -192,7 +198,7 @@ def main():
 		aggregate_job(args.aggregate)
 	elif args.aggregate_series is not None:
 		n_emitted = aggregate_series(args.aggregate_series, n_phonons=args.n_phonons)
-		print(f"abtem-run: emitted {n_emitted} aggregate/n_<k>/ frame(s)")
+		log.info(f"abtem-run: emitted {n_emitted} aggregate/n_<k>/ frame(s)")
 	elif args.resume is not None:
 		if args.generate_only:
 			parser.error("--generate-only cannot be combined with --resume")

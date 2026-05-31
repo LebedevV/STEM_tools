@@ -49,10 +49,40 @@ abtem-run-to-ensemble = "abtem_run.to_ensemble:main"
 abtem-run-extend = "abtem_run.extend:main"
 
 [project.optional-dependencies]
-# GPU deps are install-environment-specific (CUDA toolkit version, etc.) and
-# are not pinned here; install them manually for now.
-# Example: `pip install cupy-cuda12x dask-cuda rmm-cu12`
-gpu = []
+# GPU extras are CUDA-major-version-specific because cupy and rmm ship one
+# wheel per CUDA major (cupy-cuda12x vs cupy-cuda13x, etc.). Pick the extra
+# that matches your installed CUDA runtime — `nvidia-smi` shows the version
+# string in its header. dask-cuda is CUDA-version-agnostic.
+#
+# Examples:
+#   pip install -e ".[gpu-cu13]"   # CUDA 13.x (current default)
+#   pip install -e ".[gpu-cu12]"   # CUDA 12.x
+#   pip install -e ".[gpu-cu11]"   # CUDA 11.x
+#
+# rmm-cu13 is not yet on PyPI as of 2026-05; cu13 users get cupy + dask-cuda
+# only. The pipeline uses rmm only via the optional dask-cuda allocator path
+# (cfg.gpu_related.dask_cuda = true), so this is a soft dep — falls back
+# automatically when rmm is missing.
+gpu-cu11 = ["cupy-cuda11x", "dask-cuda", "rmm-cu11"]
+gpu-cu12 = ["cupy-cuda12x", "dask-cuda", "rmm-cu12"]
+gpu-cu13 = ["cupy-cuda13x", "dask-cuda"]
+dev = [
+    "pytest>=7",
+    "ruff>=0.5",
+    "mypy>=1.0",
+]
+
+[tool.mypy]
+python_version = "3.11"
+# Permissive baseline: the codebase is partially-typed and depends on
+# abtem / ase / cupy / dask which have no public type stubs. We check
+# what IS annotated and trust the rest. Raise the bar (disallow_untyped_defs,
+# strict_optional, etc.) once annotation coverage is broader.
+ignore_missing_imports = true
+warn_unused_ignores = true
+# Limit scope to the package source; tests use loose abtem/numpy types
+# that don't add value to type-check.
+files = ["src/abtem_run"]
 
 [project.urls]
 Homepage = "https://github.com/LebedevV/STEM_tools"
