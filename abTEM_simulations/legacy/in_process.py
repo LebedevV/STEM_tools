@@ -36,7 +36,6 @@ import tomli_w
 
 from abtem_run.config import load_config
 from abtem_run.pipeline import (
-	BLUR_SIGMAS,
 	expand_cfg,
 	make_potential,
 	resolve_context,
@@ -48,15 +47,14 @@ from abtem_run.simulation import (
 	make_lamella,
 )
 
-
-def save_images(img, out_dir, prefix, sg, tilt, line_hkl, det_names):
+def save_images(img, out_dir, prefix, sg, tilt, line_hkl, det_names, blur_sigmas):
 	for w, iimg in enumerate(img):
 		det_s = det_names[w]
 		cpu = iimg.copy().to_cpu()
 		# Q: do we need .mean(axis=0) here?
 		cpu.to_tiff(str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}.tif"))
 		cpu.to_zarr(str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}.zarr"), overwrite=True)
-		for k in BLUR_SIGMAS:
+		for k in blur_sigmas:
 			cpu.gaussian_filter(k, boundary='constant').to_tiff(
 				str(out_dir / f"{prefix}{sg}_{tilt}_{line_hkl}_{det_s}_{str(k).replace('.','-')}.tif"))
 
@@ -329,7 +327,7 @@ def simulation_run(s, cfg,
 			measurements = probe.scan(potential, scan=scan, detectors=[ctx.haadf_detector, ctx.abf_detector, ctx.bf_detector])
 			img = measurements.compute()
 
-			save_images(img, out_dir, '', sg, ctx.global_tilt, line_hkl, ['haadf', 'abf', 'bf'])
+			save_images(img, out_dir, '', sg, ctx.global_tilt, line_hkl, ['haadf', 'abf', 'bf'], ctx.blur_sigmas)
 
 			#frozen phonon set
 			fph_potential = entry['fph_potential']
@@ -338,7 +336,7 @@ def simulation_run(s, cfg,
 			fph_measurements = probe.scan(fph_potential, scan=scan, detectors=[ctx.haadf_detector, ctx.abf_detector])
 			img = fph_measurements.compute()
 
-			save_images(img, out_dir, 'fph_', sg, ctx.global_tilt, line_hkl, ['haadf', 'abf'])
+			save_images(img, out_dir, 'fph_', sg, ctx.global_tilt, line_hkl, ['haadf', 'abf'], ctx.blur_sigmas)
 	del dataset
 
 

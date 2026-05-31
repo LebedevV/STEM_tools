@@ -15,6 +15,25 @@ the newest existing one by default and only creates a new one if asked.
 - [ ] CLI: `--force-new` flag (+ lib `force_new=True` kwarg) to skip rediscovery
 - [ ] `aggregate_series`'s `n_<k>/` → filename collapse is out of scope for (h); defer to a later pass
 
+## Build ground state once; route worker + aggregator through `surf.xyz`
+
+The generator writes `surf.xyz` per job (the ground-state lamella after
+`make_lamella` + vacancies). The worker currently *rebuilds* the lamella
+deterministically per seed via `build_lamella_from_config`, and the
+aggregator rebuilds it once more for the projection preview. With
+`inplane_align_hkl` now in the geometry path that's real work done two
+extra times per job. The architectural argument is stronger than "avoid
+the rebuild": analyzing the ground state means looking at `surf.xyz` (it
+already exists); phonons are a derivation of the ground state (the worker
+applies displacement to it); there is no case where a fresh rebuild is
+correct.
+
+- [ ] Worker reads `surf.xyz` instead of calling `build_lamella_from_config`; the phonon displacement step applies to those atoms
+- [ ] Aggregator reads `surf.xyz` for the projection preview (the `static_potential` build in `_write_projection_previews`)
+- [ ] Decide failure mode if `surf.xyz` is missing/unreadable — refuse loudly (the generator was supposed to write it) or fall back to a build with a warning
+- [ ] Removes a class of silent-drift bug: planning's atoms vs runtime's atoms can no longer diverge
+- [ ] Interacts with chunk (h) versioned aggregates + the `static_potential` cache item below — same "build once, reuse" principle one rung higher
+
 ## Hardening + namespacing
 
 - [ ] **Per-channel seed counter on aggregates.** `_emit_channel` returning `None` enables partial-preview-in-parallel but masks incompleteness if the caller doesn't track which channels finished. Surface "N seeds averaged into this channel" — filename suffix, sidecar metadata, or zarr attr (TBD).

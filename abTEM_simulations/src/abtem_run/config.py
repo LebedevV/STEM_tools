@@ -102,6 +102,23 @@ class Simulations(BaseModel):
 	# Boundary mode for the gaussian-blur TIFF variants. Threaded into
 	# abtem.Images.gaussian_filter(boundary=...).
 	blur_boundary: Literal["nearest", "constant", "reflect", "wrap"] = Field(default="nearest")
+	# Gaussian-blur sigmas (real-space units) — one blurred TIFF per sigma
+	# per channel: aggregate/<channel>_<sigma>.tif. [] skips the blur previews.
+	blur_sigmas: list[float] = Field(default_factory=lambda: [0.025, 0.1, 0.25])
+
+	@field_validator("blur_sigmas", mode="before")
+	@classmethod
+	def validate_blur_sigmas(cls, v: Any):
+		if not isinstance(v, list):
+			raise ValueError("blur_sigmas must be a list")
+		out: list[float] = []
+		for x in v:
+			if isinstance(x, bool) or not isinstance(x, (int, float)):
+				raise ValueError(f"blur_sigmas entries must be numeric")
+			if x < 0:
+				raise ValueError(f"blur_sigmas entries must be >= 0, got {x}")
+			out.append(float(x))
+		return out
 
 class Microscope(BaseModel):
 	HT_value: int | list[int ] = Field()
