@@ -80,11 +80,6 @@ python_version = "3.11"
 # strict_optional, etc.) once annotation coverage is broader.
 ignore_missing_imports = true
 warn_unused_ignores = true
-# Don't recursively type-check third-party imports — zarr/abtem/etc. use
-# language features not present in our python_version target (3.11) and
-# would emit syntax errors that aren't our problem to fix. "skip" means
-# mypy treats imported modules as opaque (no following, no parsing).
-follow_imports = "skip"
 # Limit scope to the package source; tests use loose abtem/numpy types
 # that don't add value to type-check.
 files = ["src/abtem_run"]
