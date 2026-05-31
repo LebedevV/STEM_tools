@@ -23,7 +23,6 @@ CLI:
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -83,11 +82,8 @@ def run_pipeline(
 	elif generate_only:
 		raise ValueError("generate_only cannot be combined with resume_dir")
 
-	# Pre-flight cost estimate (skipped on resume since there's no config
-	# to estimate from). Logged at INFO so it follows the same routing as
-	# the rest of the pipeline output; silence with show_estimate=False or
-	# env ABTEM_RUN_NO_ESTIMATE=1.
-	if resume_dir is None and show_estimate and not os.environ.get("ABTEM_RUN_NO_ESTIMATE"):
+	# Pre-flight cost estimate (skipped on resume — no config to estimate from).
+	if resume_dir is None and show_estimate:
 		from ._estimate import estimate_run_cost, format_run_cost
 		log.info(format_run_cost(estimate_run_cost(load_config(config_path))))
 
@@ -196,10 +192,7 @@ def main():
 	parser.add_argument(
 		"--no-estimate",
 		action="store_true",
-		help=(
-			"suppress the pre-flight cost estimate block before generator runs. "
-			"Also suppressed by setting ABTEM_RUN_NO_ESTIMATE=1 in the environment."
-		),
+		help="suppress the pre-flight cost estimate block before generator runs.",
 	)
 	args = parser.parse_args()
 

@@ -14,12 +14,11 @@ hard to misjudge a run when the estimator says "8 jobs × 16 seeds ×
 8 static-baseline scans".
 
 Used by ``cli.run_pipeline`` before generator + workers. Skip with
-``--no-estimate`` or the env var ``ABTEM_RUN_NO_ESTIMATE=1``.
+``--no-estimate``.
 """
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 
 
@@ -82,11 +81,9 @@ def _estimate_scan_positions(cfg) -> int:
 	"""Approximate number of scan positions per scan multislice.
 
 	Matches the runtime logic in worker._run_scan: use override_sampling
-	if set (float), else probe.ctf.nyquist_sampling * 0.9. We don't
-	build a Probe here (slow + requires abtem import); instead compute
-	nyquist directly: nyquist = λ / (2 × semiangle), with
-	λ = h / sqrt(2*m_e*e*V*(1 + eV/(2*m_e*c²))) — abtem's
-	energy2wavelength formula.
+	if set (float), else probe.ctf.nyquist_sampling * 0.9. nyquist is
+	λ / (2 × semiangle); λ comes from abtem's energy2wavelength so any
+	future relativistic correction propagates automatically.
 
 	Returns floor(scan_s / sampling)² — integer scan grid size.
 	"""
@@ -95,16 +92,10 @@ def _estimate_scan_positions(cfg) -> int:
 	if sim.override_sampling and not isinstance(sim.override_sampling, bool):
 		sampling = float(sim.override_sampling)
 	else:
-		# abtem.energy2wavelength (verified against abtem.transfer):
-		# λ [Å] = h / sqrt(2 m_e e V (1 + eV/(2 m_e c²))) × 1e10
-		# constants in SI
-		h = 6.62607015e-34
-		m_e = 9.1093837015e-31
-		e = 1.602176634e-19
-		c = 299792458.0
-		V = float(cfg.microscope.HT_value)
-		lam_m = h / math.sqrt(2 * m_e * e * V * (1 + e * V / (2 * m_e * c * c)))
-		lam_A = lam_m * 1e10
+		# Lazy: keep _estimate.py importable without triggering the abtem
+		# monkey-patches when the estimator is used as a library hook.
+		from abtem.transfer import energy2wavelength
+		lam_A = float(energy2wavelength(float(cfg.microscope.HT_value)))
 		semiangle_rad = float(cfg.microscope.convergence_angle) * 1e-3
 		nyquist = lam_A / (2.0 * semiangle_rad)
 		sampling = nyquist * 0.9
@@ -141,18 +132,31 @@ def estimate_run_cost(cfg) -> RunCost:
 		# len(phase_list) × len(hkl_list) for the remaining axes.
 		n_phases = len(cfg_run.job.phase_list)
 		n_hkl = len(cfg_run.job.hkl_list)
+		# Match aggregate._emit_static_scan's runtime gate: the static-baseline
+		# scan is skipped (with a warning) when do_full_run is off, since
+		# there's no detector list to scan with. Mirror that here so the
+		# total count doesn't over-promise.
+		static_runs = 1 if (sim.emit_static_baseline and sim.do_full_run) else 0
 		for _ in range(n_phases * n_hkl):
 			per_job.append(JobCost(
 				scan_per_seed=1 if sim.do_full_run else 0,
 				diffraction_per_seed=1 if mic.do_diffraction else 0,
 				cbed_per_seed=1 if mic.do_cbed else 0,
-				static_baseline=1 if sim.emit_static_baseline else 0,
+				static_baseline=static_runs,
 				scan_positions=_estimate_scan_positions(cfg_run),
 				n_detectors=len(mic.detectors),
 				n_seeds=n_seeds,
 				thickness_a=float(cfg_run.lamella_settings.thickness),
 			))
 	return RunCost(n_jobs=len(per_job), per_job=per_job)
+
+
+def _range_or_single(values, fmt=str) -> str:
+	"""Compact "x" if all values are equal, else "lo..hi"."""
+	uniq = sorted(set(values))
+	if len(uniq) == 1:
+		return fmt(uniq[0])
+	return f"{fmt(uniq[0])}..{fmt(uniq[-1])}"
 
 
 def format_run_cost(cost: RunCost) -> str:
@@ -173,21 +177,36 @@ def format_run_cost(cost: RunCost) -> str:
 		)
 
 	if cost.per_job:
+		# Sweep-aware per-job display: collapse to a single value when constant
+		# across all jobs, else show lo..hi so the user spots variation from
+		# frozen_phonons / thickness / HT_value sweeps.
 		ref = cost.per_job[0]
+		fmt_int = lambda x: f"{x:_}"  # noqa: E731
+		n_seeds_s = _range_or_single([j.n_seeds for j in cost.per_job])
+		mps_s = _range_or_single([j.per_seed_multislices for j in cost.per_job])
+		pos_s = _range_or_single([j.scan_positions for j in cost.per_job], fmt=fmt_int)
+		thick_s = _range_or_single(
+			[round(j.thickness_a, 1) for j in cost.per_job],
+			fmt=lambda x: f"{x:.1f}",
+		)
 		lines.append("-" * 64)
-		lines.append("  per-job breakdown (showing job 0; others sweep params):")
-		lines.append(f"    n_seeds (frozen_phonons):     {ref.n_seeds}")
-		lines.append(f"    multislices per seed:         {ref.per_seed_multislices}")
+		lines.append("  per-job breakdown (lo..hi shown when sweeping):")
+		lines.append(f"    n_seeds (frozen_phonons):     {n_seeds_s}")
+		lines.append(f"    multislices per seed:         {mps_s}")
 		if ref.scan_per_seed:
-			lines.append(f"      scan: 1 (detectors={ref.n_detectors}, ~{ref.scan_positions:_} positions)")
+			lines.append(
+				f"      scan: 1 (detectors={ref.n_detectors}, ~{pos_s} positions)"
+			)
 		if ref.diffraction_per_seed:
 			lines.append("      diff: 1 (plane-wave, single multislice)")
 		if ref.cbed_per_seed:
 			lines.append("      cbed: 1 (probe-at-center, single multislice)")
 		if ref.static_baseline:
-			lines.append(f"    static_baseline:              1 (once per job, "
-			             f"detectors={ref.n_detectors}, ~{ref.scan_positions:_} positions)")
-		lines.append(f"    lamella thickness (Å):        {ref.thickness_a:.1f}")
+			lines.append(
+				f"    static_baseline:              1 (once per job, "
+				f"detectors={ref.n_detectors}, ~{pos_s} positions)"
+			)
+		lines.append(f"    lamella thickness (Å):        {thick_s}")
 
 	lines.append("=" * 64)
 	return "\n".join(lines)
