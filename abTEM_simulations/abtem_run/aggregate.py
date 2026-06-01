@@ -41,7 +41,7 @@ import matplotlib.pyplot as plt
 from ._log import configure_default_logging
 from .config import load_config
 from .pipeline import make_potential, resolve_context
-from .simulation import add_probe, build_lamella_from_config
+from .simulation import add_probe, load_ground_state_atoms
 
 
 # --------------------------------------------------------------------------- #
@@ -169,7 +169,7 @@ def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, targe
 
 	if cfg.simulations.emit_static_baseline:
 		static_potential = make_potential(
-			build_lamella_from_config(cfg, cfg.job.hkl_list[0])
+			load_ground_state_atoms(target_dir.parent, cfg)
 		).build().compute()
 		static_proj = static_potential.project().to_cpu().compute()
 		probe = add_probe(ctx, static_potential)
