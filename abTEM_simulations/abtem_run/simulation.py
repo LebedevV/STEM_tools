@@ -5,6 +5,7 @@ __license__ = "GPL-v3"
 
 import logging
 import warnings
+from pathlib import Path
 
 
 import ase
@@ -585,4 +586,27 @@ def build_lamella_from_config(cfg, hkl):
 			seed=ls.vacancies_seed,
 		)
 	return lamella
+
+
+def load_ground_state_atoms(job_dir, cfg):
+	"""Read the per-job ground-state atoms from ``job_dir/surf.xyz`` (written
+	by the generator). On missing or unreadable, warn loudly and fall back
+	to a fresh ``build_lamella_from_config`` build.
+
+	Single entry point for ground-state atoms across worker + aggregator —
+	closes the silent-drift class of bug between planning's atoms and
+	runtime's atoms.
+	"""
+	surf = Path(job_dir) / "surf.xyz"
+	try:
+		return ase.io.read(str(surf), format="extxyz")
+	except Exception as e:
+		warnings.warn(
+			f"WARNING: could not load {surf} ({type(e).__name__}: {e}); "
+			f"falling back to build_lamella_from_config. Planning's atoms "
+			f"and runtime's atoms could diverge — check that the generator "
+			f"step actually wrote surf.xyz.",
+			stacklevel=2,
+		)
+		return build_lamella_from_config(cfg, cfg.job.hkl_list[0])
 

@@ -37,7 +37,7 @@ import numpy as np
 from ._log import configure_default_logging
 from .config import load_config
 from .pipeline import make_potential, resolve_context
-from .simulation import add_probe, add_scan, build_lamella_from_config
+from .simulation import add_probe, add_scan, load_ground_state_atoms
 
 
 # --------------------------------------------------------------------------- #
@@ -192,8 +192,11 @@ def run_one_seed(job_dir, todo_path) -> None:
 	out_dir = job_dir / "outputs"
 	out_dir.mkdir(parents=True, exist_ok=True)
 
-	# 1) Static (deterministic) lamella from cfg.job + cfg.lamella_settings.
-	lamella = build_lamella_from_config(cfg, cfg.job.hkl_list[0])
+	# 1) Static (deterministic) lamella — read job_dir/surf.xyz (written by
+	#    the generator) so worker, aggregator, and planning all see the same
+	#    atoms. Falls back to a fresh build with a WARNING if surf.xyz is
+	#    missing or unreadable.
+	lamella = load_ground_state_atoms(job_dir, cfg)
 
 	# 2) Per-seed phonon displacement.
 	displaced = _displaced_atoms(lamella, ctx.fph_sigma, seed)
