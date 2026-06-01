@@ -128,6 +128,7 @@ def main():
 	"""``abtem-run`` console-script entry."""
 	configure_default_logging()
 	parser = argparse.ArgumentParser(
+		prog="abtem-run",
 		description=(
 			"abtem-run: in-process pipeline driver. "
 			"Generates the per-seed work queue from the TOML config, then "

@@ -82,11 +82,11 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 # Limit scope to the package source; tests use loose abtem/numpy types
 # that don't add value to type-check.
-files = ["src/abtem_run"]
+files = ["abtem_run"]
 
 [project.urls]
 Homepage = "https://github.com/LebedevV/STEM_tools"
 Issues = "https://github.com/LebedevV/STEM_tools/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/abtem_run"]
+packages = ["abtem_run"]
