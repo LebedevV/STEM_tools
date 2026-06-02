@@ -31,6 +31,7 @@ Library:
     aggregate_job(job_dir)
 """
 import argparse
+import logging
 import shutil
 import sys
 from pathlib import Path
@@ -42,6 +43,9 @@ from ._log import configure_default_logging
 from .config import load_config
 from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, load_ground_state_atoms
+
+
+log = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -154,20 +158,49 @@ def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, kind_label: st
 	proj_cropped.to_tiff(str(agg_dir / f"{stem}_scanned.tif"))
 
 
+def _load_or_build_static_potential(job_dir: Path, cfg):
+	"""Cached ground-state Potential. Lives at ``job_dir/static_potential.zarr``
+	(literal `static` per the static-naming rule — survives cleanup, never
+	picked up by the seed_* averaging glob). Cache hit when the zarr is at
+	least as new as ``surf.xyz``; otherwise rebuild via
+	``load_ground_state_atoms`` + ``make_potential``, save, return.
+	"""
+	cache = Path(job_dir) / "static_potential.zarr"
+	surf = Path(job_dir) / "surf.xyz"
+	if (
+		cache.exists()
+		and surf.exists()
+		and cache.stat().st_mtime >= surf.stat().st_mtime
+	):
+		log.info(f"static_potential: cache hit ({cache})")
+		return abtem.from_zarr(str(cache)).compute()
+	log.info(f"static_potential: rebuilding (cache miss) -> {cache}")
+	pot = make_potential(load_ground_state_atoms(job_dir, cfg)).build().compute()
+	# Atomic publish: write a temp store, then rename onto the cache path, so
+	# an interrupted write never leaves a partial zarr that mtime would treat
+	# as a hit (zarr v2 reads missing chunks back as zeros, silently).
+	tmp = cache.with_name(cache.name + ".tmp")
+	if tmp.exists():
+		shutil.rmtree(tmp)
+	pot.to_zarr(str(tmp), overwrite=True)
+	if cache.exists():
+		shutil.rmtree(cache)
+	tmp.replace(cache)
+	return pot
+
+
 def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, target_dir: Path) -> None:
 	"""Phonon-averaged projection at ``target_dir/potential_projection.*``,
 	plus a static-lattice one at ``..._static.*`` if ``emit_static_baseline``.
-	No-op if neither applies. Build the ground-state Potential once (via
-	``load_ground_state_atoms``) and reuse for the probe grid (abtem's
-	Grid.match wants a Potential / a thing exposing ``gpts``, not an
-	Images) and the optional static projection."""
+	No-op if neither applies. The ground-state Potential is loaded (or built
+	and cached on miss) via ``_load_or_build_static_potential`` and reused
+	for the probe grid (abtem's Grid.match wants a Potential / a thing
+	exposing ``gpts``, not an Images) and the optional static projection."""
 	mean_proj = _mean_zarr_channel(out_dir, archive_dir, "potproj")
 	if mean_proj is None and not cfg.simulations.emit_static_baseline:
 		return
 
-	static_potential = make_potential(
-		load_ground_state_atoms(target_dir.parent, cfg)
-	).build().compute()
+	static_potential = _load_or_build_static_potential(target_dir.parent, cfg)
 	probe = add_probe(ctx, static_potential)
 
 	if mean_proj is not None:
