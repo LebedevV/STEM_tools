@@ -70,14 +70,31 @@ def _collect_seed_zarrs(out_dir: Path, archive_dir: Path, channel_name: str) -> 
 
 
 def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
-	"""Move outputs/ contents into outputs_archive/ and remove outputs/."""
+	"""Move outputs/ contents into outputs_archive/ and remove outputs/.
+
+	Refuses if ``out_dir`` isn't a real directory named exactly ``outputs``
+	living next to ``archive_dir`` — guards against symlink trickery or
+	mis-resolved paths sending ``shutil.move`` / ``rmtree`` outside the
+	job tree.
+	"""
 	if not out_dir.exists():
 		return
+	if (
+		out_dir.is_symlink()
+		or not out_dir.is_dir()
+		or out_dir.name != "outputs"
+		or archive_dir.name != "outputs_archive"
+		or out_dir.parent != archive_dir.parent
+	):
+		raise ValueError(
+			f"refuse to archive: {out_dir} must be a real 'outputs' "
+			f"directory sibling of '{archive_dir.name}'"
+		)
 	archive_dir.mkdir(parents=True, exist_ok=True)
 	for child in out_dir.iterdir():
 		dest = archive_dir / child.name
 		if dest.exists():
-			if dest.is_dir():
+			if dest.is_dir() and not dest.is_symlink():
 				shutil.rmtree(dest)
 			else:
 				dest.unlink()
