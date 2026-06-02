@@ -27,7 +27,11 @@ Every seed goes through the same code path — there is no special
 with zero displacement.
 """
 import argparse
+import logging
+import shutil
+import signal
 import sys
+import threading
 from pathlib import Path
 
 import abtem
@@ -38,6 +42,57 @@ from ._log import configure_default_logging
 from .config import load_config
 from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, add_scan, load_ground_state_atoms
+
+
+log = logging.getLogger(__name__)
+
+
+def _cleanup_seed_outputs(out_dir: Path, seed: int) -> None:
+	"""Remove this seed's partial outputs/seed_NNNNNN_* files. Used on a
+	signal (SIGTERM from spot preemption / SIGINT from ^C): a half-written
+	zarr would otherwise be picked up by the aggregator's seed_*_<ch>.zarr
+	glob and silently contaminate the cross-seed mean.
+	"""
+	if not out_dir.exists():
+		return
+	for p in out_dir.glob(f"seed_{seed:06d}_*"):
+		try:
+			if p.is_dir() and not p.is_symlink():
+				shutil.rmtree(p)
+			else:
+				p.unlink()
+		except OSError:
+			pass
+
+
+def _install_preemption_handler(out_dir: Path, seed: int):
+	"""Trap SIGTERM (spot 2-minute warning) and SIGINT (^C) so we clean
+	the partial seed outputs before exiting. Returns a callable that
+	restores the previous handlers. No-op when not on the main thread
+	(``signal.signal`` is main-thread-only)."""
+	if threading.current_thread() is not threading.main_thread():
+		return lambda: None
+
+	def _handler(signum, frame):
+		log.warning(
+			f"worker: received signal {signum}, removing partial outputs "
+			f"for seed {seed} in {out_dir}"
+		)
+		_cleanup_seed_outputs(out_dir, seed)
+		# Restore default + re-raise so the process exits with the right
+		# status code (SIGTERM => 143, SIGINT => 130) and any parent
+		# orchestrator sees a clean signal-termination.
+		signal.signal(signum, signal.SIG_DFL)
+		signal.raise_signal(signum)
+
+	prev_term = signal.signal(signal.SIGTERM, _handler)
+	prev_int = signal.signal(signal.SIGINT, _handler)
+
+	def restore():
+		signal.signal(signal.SIGTERM, prev_term)
+		signal.signal(signal.SIGINT, prev_int)
+
+	return restore
 
 
 # --------------------------------------------------------------------------- #
@@ -170,6 +225,9 @@ def run_one_seed(job_dir, todo_path) -> None:
 
 	On exception: the .todo is NOT renamed, so a retry picks up the same
 	work. The aggregator will see only .done seeds.
+
+	On SIGTERM / SIGINT: partial seed_NNNNNN_* outputs are removed,
+	.todo stays in place — reclaimable.
 	"""
 	job_dir = Path(job_dir).resolve()
 	todo_path = Path(todo_path).resolve()
@@ -192,64 +250,74 @@ def run_one_seed(job_dir, todo_path) -> None:
 	out_dir = job_dir / "outputs"
 	out_dir.mkdir(parents=True, exist_ok=True)
 
-	# 1) Static (deterministic) lamella — read job_dir/surf.xyz (written by
-	#    the generator) so worker, aggregator, and planning all see the same
-	#    atoms. Falls back to a fresh build with a WARNING if surf.xyz is
-	#    missing or unreadable.
-	lamella = load_ground_state_atoms(job_dir, cfg)
+	# Preemption guard: SIGTERM (spot 2-minute warning) or SIGINT cleans the
+	# partial seed_NNNNNN_* outputs before exit so the aggregator can't pick
+	# up a half-written zarr. The .todo stays in place — reclaimable. The
+	# try/finally ensures the guard is uninstalled on both the success path
+	# and any exception, so a caller looping over .todos doesn't carry a
+	# stale handler into the next seed.
+	restore_handlers = _install_preemption_handler(out_dir, seed)
+	try:
+		# 1) Static (deterministic) lamella — read job_dir/surf.xyz (written by
+		#    the generator) so worker, aggregator, and planning all see the same
+		#    atoms. Falls back to a fresh build with a WARNING if surf.xyz is
+		#    missing or unreadable.
+		lamella = load_ground_state_atoms(job_dir, cfg)
 
-	# 2) Per-seed phonon displacement.
-	displaced = _displaced_atoms(lamella, ctx.fph_sigma, seed)
+		# 2) Per-seed phonon displacement.
+		displaced = _displaced_atoms(lamella, ctx.fph_sigma, seed)
 
-	# 3) Test mode: dump the displaced atoms BEFORE multislice
-	#    (so a crashed run still leaves the displacements inspectable).
-	if ctx.test_enabled:
-		ase.io.write(
-			str(out_dir / f"seed_{seed:06d}_displaced.xyz"),
-			displaced,
-			"xyz",
-		)
+		# 3) Test mode: dump the displaced atoms BEFORE multislice
+		#    (so a crashed run still leaves the displacements inspectable).
+		if ctx.test_enabled:
+			ase.io.write(
+				str(out_dir / f"seed_{seed:06d}_displaced.xyz"),
+				displaced,
+				"xyz",
+			)
 
-	# 4) Build the per-seed Potential.
-	potential = make_potential(displaced).build().compute()
+		# 4) Build the per-seed Potential.
+		potential = make_potential(displaced).build().compute()
 
-	# 5) Projected potential of THIS seed's displaced lattice — i.e. the exact
-	#    potential the multislice below propagates through. Written per seed
-	#    (always, regardless of do_full_run) so the aggregator can mean it
-	#    across seeds like the scan channels; the result then matches what was
-	#    simulated rather than an idealised static lattice. With do_full_run
-	#    off (and diffraction/cbed off) this is the only output — a cheap
-	#    projection-only preview.
-	proj = potential.project().to_cpu().compute()
-	proj.to_tiff(str(out_dir / f"seed_{seed:06d}_potproj.tif"))
-	proj.to_zarr(str(out_dir / f"seed_{seed:06d}_potproj.zarr"), overwrite=True)
+		# 5) Projected potential of THIS seed's displaced lattice — i.e. the exact
+		#    potential the multislice below propagates through. Written per seed
+		#    (always, regardless of do_full_run) so the aggregator can mean it
+		#    across seeds like the scan channels; the result then matches what was
+		#    simulated rather than an idealised static lattice. With do_full_run
+		#    off (and diffraction/cbed off) this is the only output — a cheap
+		#    projection-only preview.
+		proj = potential.project().to_cpu().compute()
+		proj.to_tiff(str(out_dir / f"seed_{seed:06d}_potproj.tif"))
+		proj.to_zarr(str(out_dir / f"seed_{seed:06d}_potproj.zarr"), overwrite=True)
 
-	# 6) Optional plane-wave diffraction. Write .zarr too — the aggregator
-	#    means seed_*_<channel>.zarr across seeds; .tif is for eyeballing.
-	if ctx.do_diffraction:
-		diff = run_diffraction(ctx, potential)
-		diff.to_tiff(str(out_dir / f"seed_{seed:06d}_diff.tif"))
-		diff.to_zarr(str(out_dir / f"seed_{seed:06d}_diff.zarr"), overwrite=True)
+		# 6) Optional plane-wave diffraction. Write .zarr too — the aggregator
+		#    means seed_*_<channel>.zarr across seeds; .tif is for eyeballing.
+		if ctx.do_diffraction:
+			diff = run_diffraction(ctx, potential)
+			diff.to_tiff(str(out_dir / f"seed_{seed:06d}_diff.tif"))
+			diff.to_zarr(str(out_dir / f"seed_{seed:06d}_diff.zarr"), overwrite=True)
 
-	# 7) Optional CBED.
-	if ctx.do_cbed:
-		cbed = run_cbed(ctx, potential)
-		cbed.to_tiff(str(out_dir / f"seed_{seed:06d}_cbed.tif"))
-		cbed.to_zarr(str(out_dir / f"seed_{seed:06d}_cbed.zarr"), overwrite=True)
+		# 7) Optional CBED.
+		if ctx.do_cbed:
+			cbed = run_cbed(ctx, potential)
+			cbed.to_tiff(str(out_dir / f"seed_{seed:06d}_cbed.tif"))
+			cbed.to_zarr(str(out_dir / f"seed_{seed:06d}_cbed.zarr"), overwrite=True)
 
-	# 8) Optional scan (the main per-seed output).
-	if ctx.do_full_run and ctx.detectors:
-		detector_objs = _detector_objects(ctx, ctx.detectors)
-		measurements = run_scan(ctx, potential, detector_objs)
-		for det_name, m in zip(ctx.detectors, measurements):
-			cpu = m.copy().to_cpu()
-			cpu.to_tiff(str(out_dir / f"seed_{seed:06d}_{det_name}.tif"))
-			cpu.to_zarr(str(out_dir / f"seed_{seed:06d}_{det_name}.zarr"), overwrite=True)
+		# 8) Optional scan (the main per-seed output).
+		if ctx.do_full_run and ctx.detectors:
+			detector_objs = _detector_objects(ctx, ctx.detectors)
+			measurements = run_scan(ctx, potential, detector_objs)
+			for det_name, m in zip(ctx.detectors, measurements):
+				cpu = m.copy().to_cpu()
+				cpu.to_tiff(str(out_dir / f"seed_{seed:06d}_{det_name}.tif"))
+				cpu.to_zarr(str(out_dir / f"seed_{seed:06d}_{det_name}.zarr"), overwrite=True)
 
-	# 9) Mark this seed done. Atomic rename so concurrent readers
-	#    (e.g. the aggregator polling for completion) see a coherent state.
-	done_path = todo_path.with_suffix(".done")
-	todo_path.rename(done_path)
+		# 9) Mark this seed done. Atomic rename so concurrent readers
+		#    (e.g. the aggregator polling for completion) see a coherent state.
+		done_path = todo_path.with_suffix(".done")
+		todo_path.rename(done_path)
+	finally:
+		restore_handlers()
 
 
 def main():
