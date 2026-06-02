@@ -157,22 +157,25 @@ def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, kind_label: st
 def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, target_dir: Path) -> None:
 	"""Phonon-averaged projection at ``target_dir/potential_projection.*``,
 	plus a static-lattice one at ``..._static.*`` if ``emit_static_baseline``.
-	No-op if neither applies."""
+	No-op if neither applies. Build the ground-state Potential once (via
+	``load_ground_state_atoms``) and reuse for the probe grid (abtem's
+	Grid.match wants a Potential / a thing exposing ``gpts``, not an
+	Images) and the optional static projection."""
 	mean_proj = _mean_zarr_channel(out_dir, archive_dir, "potproj")
 	if mean_proj is None and not cfg.simulations.emit_static_baseline:
 		return
 
+	static_potential = make_potential(
+		load_ground_state_atoms(target_dir.parent, cfg)
+	).build().compute()
+	probe = add_probe(ctx, static_potential)
+
 	if mean_proj is not None:
-		probe = add_probe(ctx, mean_proj)
 		_write_projection(mean_proj, probe, cfg, target_dir,
 			"potential_projection", "phonon-averaged projection")
 
 	if cfg.simulations.emit_static_baseline:
-		static_potential = make_potential(
-			load_ground_state_atoms(target_dir.parent, cfg)
-		).build().compute()
 		static_proj = static_potential.project().to_cpu().compute()
-		probe = add_probe(ctx, static_potential)
 		_write_projection(static_proj, probe, cfg, target_dir,
 			"potential_projection_static", "static lattice projection")
 

@@ -138,7 +138,9 @@ def _emit_planning_artifacts(cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
     sanity check before committing GPU time to the workers.
     """
     lamella = build_lamella_from_config(cfg_frame, hkl)
-    ase.io.write(str(job_dir / "surf.xyz"), lamella, "xyz")
+    # extxyz preserves the cell box; plain xyz drops it and downstream
+    # Potential construction crashes on box[2]=0 (division by zero).
+    ase.io.write(str(job_dir / "surf.xyz"), lamella, "extxyz")
     _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir)
 
 
