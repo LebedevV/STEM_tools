@@ -70,8 +70,8 @@ def export_data(folder,sf,fname,lat_params_vec,raw_lat_params,raw_motif,raw_extr
 	'''
 
 	#check the existance of the output folder
-	l = os.listdir(folder)
-	if not sf in l:
+	entries = os.listdir(folder)
+	if sf not in entries:
 		os.mkdir(folder+sf)
 		print('Folder %s created' % sf)
 

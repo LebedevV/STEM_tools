@@ -26,9 +26,9 @@ def gen_ij(ij_range):
 	i_range = np.arange(ij_range[0],ij_range[1])
 	j_range = np.arange(ij_range[0],ij_range[1])
 	
-	I, J = np.meshgrid(i_range, j_range, indexing='ij')
+	ig, jg = np.meshgrid(i_range, j_range, indexing='ij')
 	
-	ij_set = np.stack((I.ravel(), J.ravel()), axis=-1)
+	ij_set = np.stack((ig.ravel(), jg.ravel()), axis=-1)
 	
 	return ij_set
 
@@ -263,9 +263,9 @@ def calculate_rel_diff(df,labels_raw,relative_to,kernel=4):
 	return df
 	
 def kernel4(df,i,j):##TODO##TODO###TODO###
-	l = [(i,j),(i+1,j),(i,j+1),(i+1,j+1)]
+	cells = [(i,j),(i+1,j),(i,j+1),(i+1,j+1)]
 
-	s = np.array([np.array(df.loc[d]) if d in df.index else np.array([np.nan, np.nan]) for d in l ])
+	s = np.array([np.array(df.loc[d]) if d in df.index else np.array([np.nan, np.nan]) for d in cells ])
 
 	return np.sum(s, axis=0)/4.
 
@@ -331,10 +331,10 @@ def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=Fal
 	
 	#Here we are removing coincidences in obs
 	#might worth checking which one has nonzero I_gauss
-	df_raw.loc[df_raw['mask_obs'] == False, 'x_obs'] = np.nan
-	df_raw.loc[df_raw['mask_obs'] == False, 'y_obs'] = np.nan
+	df_raw.loc[~df_raw['mask_obs'], 'x_obs'] = np.nan
+	df_raw.loc[~df_raw['mask_obs'], 'y_obs'] = np.nan
 	
-	if not sub_area is None: #here crop happens
+	if sub_area is not None: #here crop happens
 		df_raw.loc[df_raw['x_obs'] < sub_area[0], 'x_obs'] = np.nan
 		df_raw.loc[df_raw['x_obs'] > sub_area[1], 'x_obs'] = np.nan
 		df_raw.loc[df_raw['y_obs'] < sub_area[2], 'y_obs'] = np.nan
@@ -351,7 +351,7 @@ def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=Fal
 	
 	#If extra shift is provided in fraq coordinates
 	#we can convert it to (x,y) with the standard functionality as a r-vector to the (shx,shy) for u.c. with ij [0,0]
-	if not extra_shift_ab is None:
+	if extra_shift_ab is not None:
 		print(np.array(list(lat_params['abg'])+list(lat_params['base'])+list(extra_shift_ab)))
 		tmp_val,_,_ = get_coords_from_ij(np.array([(0,0)]),np.array(list(lat_params['abg'])+list(lat_params['base'])+list(extra_shift_ab)),max_lim,lat_params, motif, extra_pars,crop=False)
 		tmp_val = tmp_val[0]
@@ -579,8 +579,8 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 
 
 	diff_df = diff_df.dropna()
-	if not relative_to is None:
-		if not relative_to in labels_raw:
+	if relative_to is not None:
+		if relative_to not in labels_raw:
 			raise IOError('Suggested reference atom position not found')
 		else:
 			if len(labels_raw) == 1:
@@ -608,7 +608,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		ang_corr = diff_df['ang_corr_rel'].values
 		vdiff_xy_corr = np.array(diff_df['vdiff_xy_corr_rel'].tolist())
 		
-	if not sf is None:
+	if sf is not None:
 		#if do_fit:
 		export_data(folder,sf,fname,param_vec,lat_params,motif,extra_pars,metadata)
 		#else:

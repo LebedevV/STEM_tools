@@ -46,9 +46,6 @@ def plot_lattice(img,sublattice_list,fname,fl,sf,text):
 	p.close()
 
 def plot_unit_cell(fname_save, lat_params, motif, wrap=True, annotate=False, show_legend=True):
-	import numpy as np
-	import matplotlib.pyplot as plt
-
 	a, b, gamma_deg = lat_params['abg']
 	gamma = np.deg2rad(gamma_deg)
 

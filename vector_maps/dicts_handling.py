@@ -1,4 +1,10 @@
+#!/usr/bin/env python3.11
+# -*- coding: utf-8 -*-
+__author__ = "Vasily A. Lebedev"
+__license__ = "GPL-v3"
 
+import numpy as _np
+import ast
 
 '''
 This set of functions meant to parse human-readable dicts into a vector of parameters and back.
@@ -64,9 +70,6 @@ extra_pars = {'db_dist':(0.1,True),
 #'''
 
 
-
-import numpy as _np
-import ast
 
 ALLOWED_NODES = (
 	ast.Expression, ast.BinOp, ast.UnaryOp,
