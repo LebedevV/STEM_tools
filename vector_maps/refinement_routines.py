@@ -188,7 +188,7 @@ def filter_lat(ij,obs,param,lat_params, motif, extra_pars,max_d=0):
 	
 	matched_obs   = obs[best_obs_mask]
 	matched_theor = theor[min_idxs[best_obs_mask]]
-	matched_ij    = ij_ref[min_idxs[best_obs_mask]]
+	matched_ij	= ij_ref[min_idxs[best_obs_mask]]
 	matched_motif = motif[min_idxs[best_obs_mask]]
 	matched_dists = matched_dists[best_obs_mask]
 
@@ -281,19 +281,54 @@ def kernel4(df,i,j):##TODO##TODO###TODO###
 
 	return np.sum(s, axis=0)/4.
 
+
+
+
+#To double-check
+def load_dataset_auto(folder, fname):
+	"""
+	Try CSV first, then fall back to NPY.
+
+	Expected naming:
+	  folder/fname.csv
+	  folder/fname.npy
+	where fname is the stem (without .tif).
+	"""
+	base = os.path.join(folder, fname)
+
+	csv_path = base + '_xyI.csv'
+	npy_path = base + '.npy'
+
+	if os.path.exists(csv_path):
+		print('Loading CSV dataset:', csv_path)
+		return pd.read_csv(csv_path)
+
+	if os.path.exists(npy_path):
+		print('Loading NPY dataset:', npy_path)
+		return np.load(npy_path).T
+	print(csv_path)
+	raise FileNotFoundError(
+		'Neither CSV nor NPY dataset found for base path: %s' % base
+	)
+
+
 def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=False,extra_shift_ab=None,max_dist=0,sub_area=None):
 	#TODO proper pandas
-	#print(dataset.shape)
-	if min(dataset.shape) == 2:
-		print('No ellipticity found!')
-		df_raw = pd.DataFrame(dataset, columns=['x_obs0', 'y_obs0'])
-	elif min(dataset.shape) == 5:
-		print('It seems that gaussian Is are not exported')
-		df_raw = pd.DataFrame(dataset, columns=['x_obs0', 'y_obs0','ell0','rot0','I0'])
-		#x0,y0,ell0,rot0,i_0 = np.load(folder+fname.split('.')[0]+'.npy')
+	if isinstance(dataset, pd.DataFrame):
+		print("CSV / DataFrame dataset detected")
+		df_raw = dataset.copy()
 	else:
-		df_raw = pd.DataFrame(dataset, columns=['x_obs0', 'y_obs0','ell0','rot0','I_gauss','I0'])
-				
+		#print(dataset.shape)
+		if min(dataset.shape) == 2:
+			print('No ellipticity found!')
+			df_raw = pd.DataFrame(dataset, columns=['x_obs0', 'y_obs0'])
+		elif min(dataset.shape) == 5:
+			print('It seems that gaussian Is are not exported')
+			df_raw = pd.DataFrame(dataset, columns=['x_obs0', 'y_obs0','ell0','rot0','I0'])
+			#x0,y0,ell0,rot0,i_0 = np.load(folder+fname.split('.')[0]+'.npy')
+		else:
+			df_raw = pd.DataFrame(dataset, columns=['x_obs0', 'y_obs0','ell0','rot0','I_gauss','I0'])
+					
 	observed_xy = np.array([ (i*calib,j*calib) for i,j in df_raw[['x_obs0', 'y_obs0']].values])
 	df_raw[['x_obs', 'y_obs']] = observed_xy	
 
@@ -367,15 +402,16 @@ def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=Fal
 
 
 def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_zero=False,show_initial_spots=False,vec_scale=0.05,
-			do_fit=True,relative_to=None,kernel=4,extra_shift_ab=None,sub_area=None,max_dist=0,export_sublattice_xy=False):
+			do_fit=True,relative_to=None,kernel=4,extra_shift_ab=None,sub_area=None,max_dist=0,export_sublattice_xy=False,dataset_fname=None):
 	if not do_fit:
 		recall_zero=False
 	
 		
 	s = load_frame(folder,fname,calib)#.T#!TODO is .T needed?
+	dataset = load_dataset_auto(folder, dataset_fname if dataset_fname is not None else fname)
+	#dataset = np.load(folder+fname.split('.')[0]+'.npy').T
+	#dataset = load_dataset_auto(folder, fname)
 	
-	dataset = np.load(folder+fname.split('.')[0]+'.npy').T
-
 	ij_cr, th_relevant, observed_xy, _, _ = preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=recall_zero,
 							extra_shift_ab=extra_shift_ab,max_dist=max_dist,sub_area=sub_area) #This one for a preview; no need to load the dataframe
 	
@@ -538,7 +574,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 
 
 	#lat_params_fin,_ = unpack_vector(param_vec,lat_params,motif)
-	lat_params_fin,_,_ = unpack_to_dicts(param_vec, lat_params, motif, extra_pars)
+	lat_params_fin,motif_fin,extras_fin = unpack_to_dicts(param_vec, lat_params, motif, extra_pars)
 	phi = lat_params_fin['base'][2]
 	
 		
@@ -595,11 +631,41 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		if relative_to is None:	
 			#plot_lattice(s,[obs_lat,theor_lat],fname,folder,sf,'initial_guess_full_'+sf)
 			plot_lattice(s,[obs_lat,refined_rel_lat],fname,folder,sf,'fit_'+sf)
-			
-		if export_sublattice_xy:
-			np.save(folder+fname+'positions',np.array(theor_res_rel)/calib)
 		
-		file_s = folder + sf + '/' +fname +'_'+sf
+		
+		file_s = folder + sf + '/' +sf
+		plot_unit_cell(file_s + '_unit_cell', lat_params_fin, motif_fin)
+		
+		if export_sublattice_xy:
+			#np.save(folder+fname+'positions',np.array(theor_res_rel)/calib)
+			# diff_df already contains only valid atoms
+			export_df = diff_df.copy()
+
+			cols_out = [
+				'x_obs0', 'y_obs0',
+				'ell0', 'rot0',
+				'I_gauss', 'I0',
+				'sigma_x', 'sigma_y',
+				'x0_std','y0_std',
+				'sx_std','sy_std',
+				'rot_std','Ig_std'
+				]
+
+			cols_out = [c for c in cols_out if c in export_df.columns]
+
+			export_df[cols_out].to_csv(
+				file_s + '_filtered.csv',
+				index=False,
+				float_format='%.8g'
+				)
+				
+			diff_df.to_csv(
+				file_s + '_full.csv',
+				index=False,
+				float_format='%.8g'
+				)
+		
+		
 		plot_stats_rep(vdist,file_s+'_diff',ang=False,ang_weights=None)
 		plot_stats_rep(ang,file_s+'_angles',ang=True,ang_weights=None)
 		
@@ -611,9 +677,9 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		
 		
 		plot_quiver(file_s + '_vmap_abs',th_relevant2,vdiff_xy,ang,
-				vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=calib)
+				vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=calib,df=diff_df)
 		plot_quiver(file_s + '_vmap_rotated',th_relevant2,vdiff_xy_corr,ang_corr,
-				vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=calib)
+				vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=calib,df=diff_df)
 		
 		#_corr meant to be aligned with OX already, compensating phi
 		phi = phi*np.pi/180
@@ -635,7 +701,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 			at_labels = [i+'\n'+j for i,j in zip(labels_raw,types_raw)]
 			plot_violin(file_s + '_I0_vor',at_labels,diff_df)
 
-		plot_output_page(fname,folder + sf + '/')
+		plot_output_page(fname,folder + sf + '/',full_df=diff_df)
 		plot_output_page_diff(fname,folder + sf + '/')
 		
 	

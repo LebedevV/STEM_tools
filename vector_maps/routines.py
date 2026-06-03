@@ -82,7 +82,7 @@ def export_data(folder,sf,fname,lat_params_vec,raw_lat_params,raw_motif,raw_extr
 	lat_params_fin, motif_fin, extra_pars_fin = unpack_to_dicts(lat_params_vec, raw_lat_params,raw_motif, raw_extra_pars)
 	#lat_params_fin,motif_fin = unpack_vector(lat_params_vec,raw_lat_params,raw_motif)
 	
-	export_name = folder+sf+'/'+fname.split('.')[0]+'_'+sf
+	export_name = folder+sf+'/'+sf
 	
 	mdata = pd.DataFrame.from_dict(metadata,orient='index')
 	mdata.to_csv(export_name +'_metadata.csv',sep='\t')
@@ -192,17 +192,19 @@ def imshow_no_axes(ax, im):
 	ax.imshow(im)
 	ax.set_axis_off()
 
-def plot_output_page(fname,folder):
+def plot_output_page(fname,folder,full_df=None):
 	'''
 	Code has been created with AI assistance (OpenAI GPT-5) and manually reviewed
 	'''
-	s = '_'+ folder.split('/')[-2]
+	#s = '_'+ folder.split('/')[-2]
+	sf = Path(folder.rstrip('/')).name
+	s = '_' + str(sf)
 	pngs = {
 		"a": folder+'../'+fname+".png",
-		"b": folder+fname+s + '_vmap_rotated.png',
-		"c": folder+fname+s + '_diff_hist.png',
-		"d": folder+fname+s + '_angles_hist.png',
-		"e": folder+fname+s + '_vmap_rotated_fr0.png',
+		"b": folder+sf + '_vmap_rotated.png',
+		"c": folder+sf + '_diff_hist.png',
+		"d": folder+sf + '_angles_hist.png',
+		"e": folder+sf + '_vmap_rotated_fr0.png',
 	}
 	
 	#print(pngs)
@@ -239,7 +241,7 @@ def plot_output_page(fname,folder):
 
 	#load text vals
 	
-	df = pd.read_csv(folder+fname+s +'_metadata.csv', sep="\t", index_col=0)
+	df = pd.read_csv(folder+sf +'_metadata.csv', sep="\t", index_col=0)
 	print(df)
 
 	try:
@@ -261,6 +263,72 @@ def plot_output_page(fname,folder):
 	txt_label += "a = " + str(lat_a) +"$\AA$ \n"
 	txt_label += "b = " + str(lat_b) +"$\AA$ \n"
 	txt_label += "$\gamma $ = " + str(lat_g) +"$^{\circ}$ \n"
+	
+	parent_dir = Path(folder).parent
+
+	# -------------------------
+	# global calib: only once
+	# -------------------------
+	stats0_path = parent_dir / f"{fname}_stats.txt"
+	if stats0_path.exists():
+		with open(stats0_path, "r") as f:
+			stats0 = dict(
+				line.strip().split(" = ", 1)
+				for line in f
+				if " = " in line
+			)
+
+		img_x = pd.to_numeric(stats0.get("img_x", np.nan), errors="coerce")
+		pix_x = pd.to_numeric(stats0.get("pix_x", np.nan), errors="coerce")
+
+		calib = img_x / pix_x * 1000 if pd.notna(img_x) and pd.notna(pix_x) and pix_x != 0 else np.nan
+
+		if pd.notna(calib):
+			txt_label += f"Pixel size = {calib:.2g} pm/px\n"
+
+	# -------------------------
+	# per-dataset stats
+	# -------------------------
+	if full_df is not None and "sub_id" in full_df.columns:
+		sub_ids = pd.Series(full_df["sub_id"]).dropna().astype(str).unique()
+
+		for sid in sub_ids:
+			stats_path = parent_dir / f"{fname}_{sid}_rerun_stats.txt"
+			if stats_path.exists():
+				with open(stats_path, "r") as f:
+					stats_sub = dict(
+						line.strip().split(" = ", 1)
+						for line in f
+						if " = " in line
+					)
+
+				SnR = pd.to_numeric(stats_sub.get("SnR", np.nan), errors="coerce")
+				n_pix = pd.to_numeric(stats_sub.get("n_pix_1sigma_mean_linear", np.nan), errors="coerce")
+
+				txt_label += f"\n{sid}:\n"
+				if pd.notna(SnR):
+					txt_label += f"SnR = {SnR:.3g}\n"
+				if pd.notna(n_pix):
+					txt_label += f"σ = {n_pix:.3g}pix\n"
+
+	else:
+		if stats0_path.exists():
+			with open(stats0_path, "r") as f:
+				stats0 = dict(
+					line.strip().split(" = ", 1)
+					for line in f
+					if " = " in line
+				)
+
+			SnR = pd.to_numeric(stats0.get("SnR", np.nan), errors="coerce")
+			n_pix = pd.to_numeric(stats0.get("n_pix_1sigma_mean_linear", np.nan), errors="coerce")
+
+			if pd.notna(SnR):
+				txt_label += f"SnR = {SnR:.3g}\n"
+			if pd.notna(n_pix):
+				txt_label += f"σ = {n_pix:.3g}pix\n"
+	
+	
 	# Text area (right side of first row)
 	ax_txt.set_axis_off()
 	ax_txt.text(
@@ -284,19 +352,20 @@ def plot_output_page(fname,folder):
 	)
 
 	# Optional: tight layout and save
-	plt.tight_layout()
+	#plt.tight_layout()
 	plt.savefig(folder+"_panel_1.png", dpi=400, bbox_inches="tight")
-	plt.close()
+	plt.close('all')
 	#plt.show()
 
 def plot_output_page_diff(fname,folder):
 	'''
 	Code has been created with AI assistance (OpenAI GPT-5) and manually reviewed
 	'''
-	s = '_'+ folder.split('/')[-2]
-	files = [folder+fname+s + '_vmap_rotated.png',
-		folder+fname+s + '_vmap_proj_a.png',
-		folder+fname+s + '_vmap_proj_a90.png']
+	sf = Path(folder.rstrip('/')).name
+	s = '_' + str(sf)
+	files = [folder+sf + '_vmap_rotated.png',
+		folder+sf + '_vmap_proj_a.png',
+		folder+sf + '_vmap_proj_a90.png']
 	titles = ["Vector map", "Components $\parallel ~ a$", "Components $\perp ~ a$"]
 
 	images = [load_and_trim_cv2(f) for f in files]
@@ -305,12 +374,12 @@ def plot_output_page_diff(fname,folder):
 	fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 
 	for ax, img, title in zip(axes, images, titles):
-	    ax.imshow(img)
-	    ax.set_title(title, fontsize=13, pad=10)
-	    ax.axis("off")
+		ax.imshow(img)
+		ax.set_title(title, fontsize=13, pad=10)
+		ax.axis("off")
 
 	plt.tight_layout()
 	plt.savefig(folder+"_panel_2.png", dpi=400, bbox_inches="tight")
-	plt.close()
+	plt.close('all')
 	#plt.show()
 
