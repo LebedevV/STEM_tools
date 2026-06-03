@@ -5,11 +5,15 @@ __license__ = "GPL-v3"
 
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-import atomap.api as am
 import numpy as np
 import matplotlib.patches as patches
-
+import matplotlib
+#matplotlib.rcParams["backend"] = "Agg"
 import scipy.stats as st
+
+import atomap.api as am
+
+import os
 
 def plot_lattice(img,sublattice_list,fname,fl,sf,text):
 	'''
@@ -22,15 +26,20 @@ def plot_lattice(img,sublattice_list,fname,fl,sf,text):
 		fname - str, basename of file to be processed
 		text - str, extra text field to be added to the safed file name
 	'''
-
-	plt.close('all')
+	
+	old_backend = matplotlib.get_backend()
+	#plt.close('all')
+	#plt.switch_backend('agg')
+	#plt.ioff()
 	
 	atom_lattice = am.Atom_Lattice(
-			image=img.transpose(signal_axes=[1, 0]),#TODO! is this .T needed?
+			image=img,#.transpose(signal_axes=[1, 0]),#TODO! is this .T needed?
 			sublattice_list=sublattice_list)
 	s = atom_lattice.get_sublattice_atom_list_on_image()
-	s.plot()
-	fig = s._plot.signal_plot.figure
+	
+	q = s.plot()
+	p = s._plot
+	fig = p.signal_plot.figure
 	fig.delaxes(fig.axes[1]) #remove colorbar
 	ax_list = fig.axes
 	for i in ax_list:
@@ -39,10 +48,108 @@ def plot_lattice(img,sublattice_list,fname,fl,sf,text):
 		i.title.set_text('')
 	fig.suptitle(text)
 	fig.tight_layout()
-	fig.savefig(fl+sf+'/'+fname+'_'+text+'.png')
-	
-	plt.close('all')
+	fig.savefig(fl+sf+'/'+text+'.png')
 
+	#mgr = fig.canvas.manager
+	#win = mgr.window
+	#win.close()
+	#mgr.destroy()
+	#fig.canvas.manager.window.close()
+	#fig.clear()
+	plt.close('all')
+	p.close()
+
+	#plt.switch_backend(old_backend)	
+	
+
+def plot_unit_cell(fname_save, lat_params, motif, wrap=True, annotate=False, show_legend=True):
+	import numpy as np
+	import matplotlib.pyplot as plt
+
+	a, b, gamma_deg = lat_params['abg']
+	gamma = np.deg2rad(gamma_deg)
+
+	# lattice vectors in Cartesian coordinates
+	va = np.array([a, 0.0])
+	vb = np.array([b * np.cos(gamma), b * np.sin(gamma)])
+
+	# unit-cell outline
+	cell = np.array([
+		[0.0, 0.0],
+		va,
+		va + vb,
+		vb,
+		[0.0, 0.0]
+	])
+
+	fig, ax = plt.subplots(figsize=(4.5, 4.5))
+
+	# draw cell border only
+	ax.plot(cell[:, 0], cell[:, 1], lw=2, color='black')
+
+	# collect unique elements and assign colors
+	used_specs = [spec for spec in motif.values() if spec.get('use', True)]
+	elements = []
+	for spec in used_specs:
+		atom_name = spec.get('atom', '')
+		el = atom_name.split('_')[0] if atom_name else 'X'
+		if el not in elements:
+			elements.append(el)
+
+	cmap = plt.get_cmap('tab10')
+	color_map = {el: cmap(i % 10) for i, el in enumerate(elements)}
+
+	pts_x = []
+	pts_y = []
+
+	# plot motif points
+	for label, spec in motif.items():
+		if not spec.get('use', True):
+			continue
+
+		fa, fb = spec['coord']
+		if wrap:
+			fa = fa % 1.0
+			fb = fb % 1.0
+
+		x = fa * a + fb * b * np.cos(gamma)
+		y = fb * b * np.sin(gamma)
+
+		atom_name = spec.get('atom', '')
+		el = atom_name.split('_')[0] if atom_name else 'X'
+		col = color_map[el]
+
+		ax.scatter([x], [y], s=90, color=col, edgecolors='black', linewidths=0.7, zorder=3)
+
+		pts_x.append(x)
+		pts_y.append(y)
+
+		if annotate:
+			ax.text(x, y, ' ' + el, va='bottom', ha='left', fontsize=10)
+
+	if show_legend:
+		for el in elements:
+			ax.scatter([], [], s=90, color=color_map[el], edgecolors='black',
+					   linewidths=0.7, label=el)
+		ax.legend(frameon=False, loc='best')
+
+	all_x = list(cell[:, 0]) + pts_x
+	all_y = list(cell[:, 1]) + pts_y
+
+	xmin, xmax = min(all_x), max(all_x)
+	ymin, ymax = min(all_y), max(all_y)
+
+	pad = 0.15 * max(a, b)
+	ax.set_xlim(xmin - pad, xmax + pad)
+	ax.set_ylim(ymin - pad, ymax + pad)
+
+	ax.set_aspect('equal')
+	ax.set_xlabel('nm')
+	ax.set_ylabel('nm')
+	ax.set_title('Unit cell')
+	plt.tight_layout()
+	plt.savefig(fname_save + '.png', dpi=400)
+	plt.close('all')
 
 def plot_violin(fname_save,labels,df):
 	'''
@@ -65,10 +172,10 @@ def plot_violin(fname_save,labels,df):
 	plt.xticks(ticks=pos, labels=labels)
 	plt.ylabel('Intensity')
 	plt.savefig(fname_save+'.png')
-	plt.close()
+	plt.close('all')
 	
 	
-def plot_quiver(fname_save,fin_lat,vdiff_xy,ang,vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=None):
+def plot_quiver(fname_save,fin_lat,vdiff_xy,ang,vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=None,df=None):
 	ref_angle = 0#np.pi/4
 	vx = [i for i,j in fin_lat]
 	vy = [j for i,j in fin_lat]
@@ -123,8 +230,37 @@ def plot_quiver(fname_save,fin_lat,vdiff_xy,ang,vec_scale,hd_w=2,units_v='$1 \AA
 		)
 	cb.ax.tick_params(labelsize=14)
 	#plt.tight_layout()
-	plt.savefig(fname_save,dpi=600)
+	plt.savefig(fname_save+'.png',dpi=600)
+	'''
+	if not ell and df is not None:
+		#try:
+			req_cols = ['x_obs', 'y_obs', 'x0_std', 'y0_std']
+			print(df['x_obs'])
+			if all(c in df.columns for c in req_cols):
+				for _, row in df.iterrows():
+					xc = row['x_obs'][0]
+					yc = row['y_obs'][0]
+					sx = row['x0_std'][0] * calib
+					sy = row['y0_std'][0] * calib
 
+					if np.isfinite(xc) and np.isfinite(yc) and np.isfinite(sx) and np.isfinite(sy):
+						ell_patch = patches.Ellipse(
+							(xc, yc),
+							width=2.0 * sx,
+							height=2.0 * sy,
+							angle=row['rot'][0],
+							fill=False,
+							edgecolor='black',
+							linewidth=0.5,
+							alpha=0.5,
+							zorder=10
+						)
+						ax1.add_patch(ell_patch)
+						plt.savefig(fname_save+'_2.png',dpi=600)
+		#except Exception as e:
+		#	print('Failed to draw uncertainty ellipses for', fname_save, ':', e)
+
+	'''
 	plt.close()
 	fig1, ax1 = plt.subplots()
 	ax1.set_box_aspect(1)
@@ -168,7 +304,7 @@ def plot_quiver(fname_save,fin_lat,vdiff_xy,ang,vec_scale,hd_w=2,units_v='$1 \AA
 	#qk = ax1.quiverkey(Q, 0.8, 0.92, 0.1, r'$1 \AA$', labelpos='E',
 	#				   coordinates='figure')
 	plt.savefig(fname_save+'_fr0.png',dpi=600)
-	plt.close()
+	plt.close('all')
 	
 def plot_stats_rep(vdist,fname_save,ang=False,ang_weights=None):
 	#stats here
