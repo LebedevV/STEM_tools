@@ -5,9 +5,7 @@ __license__ = "GPL-v3"
 
 import os
 import numpy as np
-import hyperspy.api as hs
 import atomap.api as am
-import atomap.initial_position_finding as ipf
 #from scipy.spatial.transform import Rotation as R
 import scipy
 import matplotlib.pyplot as plt
@@ -104,13 +102,10 @@ def get_coords_from_ij(ij,param_vec,max_lim,lat_params, motif_r, extra_pars,crop
 		cr_lat = lat[mask] #More strict then the reiterate non-crop over cropped ij!
 		##!TODO consider a recurrent version
 		cr_ij = np.array(ij)[mask_ij]
-		
-		ij_ref_cr = ij_ref[mask]
 	else:
 		cr_lat = lat
 		cr_ij = ij
-		ij_ref_cr = ij_ref
-		
+
 	return cr_lat,cr_ij,ij_ref
 
 def mask_close_points(points, threshold=1e-4):
@@ -145,7 +140,6 @@ def filter_lat(ij,obs,param,lat_params, motif, extra_pars,max_d=0):
 	
 	
 	dist_matrix = cdist(obs, theor)
-	min_dists = np.min(dist_matrix, axis=1)
 	min_idxs  = np.argmin(dist_matrix, axis=1)
 
 	dist_matrix = cdist(obs, theor)
@@ -239,8 +233,7 @@ def get_diff(par,param_vec,indep_idx, eq_mask, eq_funcs,ij_cr,obs_cr,lookup_t,ma
 
 
 def calculate_rel_diff(df,labels_raw,relative_to,kernel=4):
-	labels_i = [i for i,_ in enumerate(labels_raw) ]
-	relative_to_i = labels_raw.index(relative_to)	
+	relative_to_i = labels_raw.index(relative_to)
 	
 	q = ['vdiff_xy', 'vproj', 'vdiff_xy_corr']
 	q_ref = ['vdiff_xy_ref', 'vproj_ref', 'vdiff_xy_corr_ref']
@@ -384,7 +377,6 @@ def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=Fal
 	
 	#print(df_raw,tmp_df)
 	lookup_df = pd.merge(df_raw, tmp_df, on=['x_obs', 'y_obs'], how='inner')
-	l3 = len(lookup_df['x_obs'].values)
 	#if l1 != l3:
 	#	print(l1,l2,l3)
 	#	raise IOError
@@ -555,7 +547,6 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 	#obs_lat = am.Sublattice(observed_xy/calib, image=s.T, color='b')
 	obs_lat = am.Sublattice(obs_cr/calib, image=s, color='b')
 	#theor_lat = am.Sublattice(theor/calib, image=s, color='r') #before refinement, full
-	theor_rel_lat = am.Sublattice(th_relevant/calib, image=s, color='r') #before refinement, filtered to paired ones
 	
 
 	theor_res,_,_ = get_coords_from_ij(ij_cr,param_vec.copy(),max_lim,lat_params, motif, extra_pars,crop=False)
