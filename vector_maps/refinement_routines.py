@@ -223,14 +223,9 @@ def cost_function(f_obs,f_theor):
 	return tot_dist
 
 
-def get_diff(par,indep_idx, eq_mask, eq_funcs,ij_cr,obs_cr,lookup_t,max_lim,lat_params, motif, extra_pars):
-	#we need to variate only those params selected by fit booleans
-	#corr_par = np.array([ par[i] if fit_flags[i] else raw_par[i] for i in np.arange(len(fit_flags)) ])
-	
-	layout = build_layout(lat_params, motif, extra_pars)
-	param_vec, fit = init_param_and_fit(lat_params, motif, extra_pars, layout)
-	eq_mask, eq_funcs = compile_equations(lat_params, motif, extra_pars, layout)
-	indep_idx = build_independent_index(fit, eq_mask)
+def get_diff(par,param_vec,indep_idx, eq_mask, eq_funcs,ij_cr,obs_cr,lookup_t,max_lim,lat_params, motif, extra_pars):
+	# layout + equation system are built once by the caller; inflate_params
+	# copies param_vec, so reusing the base vector across iterations is safe.
 
 	#param_vec = inflate_params(x0, param_vec, indep_idx, eq_mask, eq_funcs)
 	
@@ -529,7 +524,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 	#print("in indep_idx:", ix in indep_idx, iy in indep_idx)
 	
 	if do_fit:	
-		res = scipy.optimize.minimize(get_diff, x0, args=(indep_idx, eq_mask, eq_funcs,
+		res = scipy.optimize.minimize(get_diff, x0, args=(param_vec, indep_idx, eq_mask, eq_funcs,
 										ij_cr,obs_cr,lookup_t,max_lim,
 										lat_params, motif, extra_pars))
 		print(res)

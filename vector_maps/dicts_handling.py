@@ -226,9 +226,9 @@ def compile_equations(lat_params, motif, extra_pars, layout):
 			src = eq[1].lstrip()
 			if src.startswith('='):
 				src = src[1:].strip()
-				code = _compile_eq(src)
-				eq_mask[iy] = True
-				eq_funcs[iy] = make_f(code)
+			code = _compile_eq(src)
+			eq_mask[iy] = True
+			eq_funcs[iy] = make_f(code)
 
 
 
