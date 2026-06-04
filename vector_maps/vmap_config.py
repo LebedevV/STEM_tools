@@ -5,7 +5,7 @@ __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
 import tomllib
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -125,3 +125,43 @@ def load_config(path) -> AppConfig:
     with open(path, "rb") as f:
         data = tomllib.load(f)
     return AppConfig.model_validate(data)
+
+
+# ---- batch sweep schema ----------------------------------------------------
+
+class Manifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    path: str
+
+
+class FitRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    config: str
+
+
+class SweepRun(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    retries: int = 1
+
+
+class MapSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    field: str
+    title: str = ""
+    significant: Optional[str] = None
+    scale: float = 1.0
+
+
+class BatchConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    manifest: Manifest
+    filter: dict[str, Any] = {}
+    fit: FitRef
+    run: SweepRun = SweepRun()
+    maps: list[MapSpec] = []
+
+
+def load_batch(path) -> BatchConfig:
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    return BatchConfig.model_validate(data)

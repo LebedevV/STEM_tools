@@ -192,9 +192,7 @@ fph_sigma  = 0.1
 config = "fit.toml"              # per-frame config; io.folder/io.fname set per row
 
 [run]
-workers    = 8
-preprocess = false               # optional TIFF pre-convert
-retries    = 3
+retries = 3                      # per-frame fit retries
 
 # one PNG per [[maps]] entry, over (tilt_a, tilt_b)
 [[maps]]

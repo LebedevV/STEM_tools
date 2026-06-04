@@ -1,0 +1,42 @@
+# Batch analysis of the Pm3m hkl-110 tilt series (abtem out_full).
+#   build the manifest:  python vmap_manifest.py 10/out_full
+#   run the sweep:       python vmap_sweep.py --config examples/batch_pm3m.toml
+
+[manifest]
+path = "10/out_full/manifest.csv"   # produced by vmap_manifest.py
+
+[filter]                            # select the phonon-averaged HAADF, 0.25-blur slice
+detector   = "haadf"
+is_fph     = true
+scan_s     = 50.0
+thickness  = 50.0
+borders    = 5.0
+phonons    = 8
+fph_sigma  = 0.1
+blur_sigma = 0.25
+
+[fit]
+config = "examples/fit_pm3m.toml"   # per-frame config; io.folder/io.fname set per row
+
+[run]
+retries = 1
+
+# one PNG per [[maps]] entry, over (tilt_a, tilt_b); fields harvested per frame
+[[maps]]
+field = "residual_in_pm"
+title = "Residual (pm)"
+
+[[maps]]
+field = "a_fit"
+title = "a (nm)"
+
+[[maps]]
+field = "motif_dist"
+title = "Sublattice shift (pm)"
+scale = 1000
+significant = "std"
+
+[[maps]]
+field = "std"
+title = "Residual std (pm)"
+scale = 1000
