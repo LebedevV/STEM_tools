@@ -1,0 +1,36 @@
+# Pm3m perovskite (hkl 110) — PLACEHOLDER lattice/motif; needs GUI-tuning + detected
+# points to produce real fits. io.folder/io.fname are overridden per row by the sweep.
+[io]
+folder = "./"
+fname  = "placeholder"
+
+[calibration]
+source = "value"
+value  = 0.0188                  # nm/pixel (placeholder)
+
+[lattice]
+abg      = [0.4, 0.4, 90.0]      # cubic ~0.4 nm projected (placeholder)
+base     = [0.0, 0.0, 0.0]
+fit_abg  = [true, true, true]
+fit_base = [true, true, true]
+
+[[motif]]
+label = "A_1"
+el    = "Pb"
+coord = [0.0, 0.0]
+fit   = [false, false]
+
+[[motif]]
+label = "B_1"
+el    = "Zr"
+coord = [0.5, 0.5]
+fit   = [true, true]
+
+[run]
+gui  = false
+seed = false
+
+passes = [
+  { name = "prefit", sub_area = [1.0,4.0,1.0,4.0], vec_scale = 0.1, max_dist = 0.1 },
+  { name = "free",   sub_area = [0.5,4.5,0.5,4.5], vec_scale = 0.25, max_dist = 0.1, save = true, fit = { B_1 = [true,true] } },
+]

@@ -1,0 +1,43 @@
+# TaTe2 — one Ta + two Te sublattices (mirrors the fit_lattice_TaTe2 driver)
+[io]
+folder = "./"
+fname  = "fph_TaTe2_(0.0, 0.0)_010_haadf_0-25"
+
+[calibration]
+source = "value"
+value  = 0.018796992481203006   # 5/266 nm/pixel
+
+[lattice]
+abg      = [0.32, 1.18, 145.5]
+base     = [0.0, 0.0, -45.0]
+fit_abg  = [true, true, true]
+fit_base = [true, true, true]
+
+[[motif]]
+label = "A_1"
+el    = "Ta"
+coord = [0.0, 0.0]
+fit   = [false, false]
+
+[[motif]]
+label = "B_1"
+el    = "Te"
+coord = [0.0, 0.25]
+fit   = [false, false]
+
+[[motif]]
+label = "B_2"
+el    = "Te"
+coord = [0.0, 0.75]
+fit   = [false, false]
+
+[run]
+gui  = false
+seed = false
+
+passes = [
+  { name = "prefit",  sub_area = [1.0,3.0,1.0,3.0], vec_scale = 0.01, max_dist = 0.15 },
+  { name = "prefit2", sub_area = [1.0,3.0,1.0,3.0], vec_scale = 0.01, max_dist = 0.15 },
+  { name = "fixed",   sub_area = [0.5,4.5,0.5,4.5], vec_scale = 0.25, max_dist = 0.15, save = true },
+  { name = "free",    sub_area = [0.5,4.5,0.5,4.5], vec_scale = 0.25, max_dist = 0.15, save = true, fit = { B_1 = [true,true], B_2 = [true,true] } },
+]
