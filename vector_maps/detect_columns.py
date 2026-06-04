@@ -7,8 +7,6 @@ import matplotlib.pyplot as plt
 
 import hyperspy.api as hs
 import atomap.api as am
-from atomap.tools import remove_atoms_from_image_using_2d_gaussian
-import atomap.initial_position_finding as ipf
 
 import scipy
 import scipy.ndimage
@@ -25,8 +23,6 @@ def detect_columns(
 	start_csv=None,
 	out_suffix=''
 ):
-	import pandas as pd
-	
 	full_stats = {}
 	metadata = {}
 
@@ -145,8 +141,6 @@ def detect_columns(
 	plt.close('all')
 	model_image = sublattice.get_model_image().data
 	image_data_subtracted = sublattice.image - model_image
-
-	import numpy as np
 
 	# image size
 	img = sublattice.image
@@ -271,7 +265,6 @@ def detect_columns(
 	print(np.min(intensities),np.max(intensities),np.mean(intensities))
 
 	pixel_mask = np.zeros_like(img, dtype=bool)
-	n_sigma = 3
 
 	for k in range(len(x0)): #we need to mask also those which are centered outside of 10% area
 		cx, cy = x0[k], y0[k]
