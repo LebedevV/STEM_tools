@@ -63,6 +63,32 @@ def load_frame(folder,fname,calib_size_by_px): #TODO - we do not really have to 
 	
 	return s
 	
+def read_frame_calib(folder,fname,fallback=None,atol=1e-6):
+	'''
+	Calibration (nm/pixel) from a <fname>_frame.txt sidecar (keys
+	xres_px/yres_px/xreal_nm/yreal_nm). Returns `fallback` if the sidecar is
+	absent; raises on anisotropic pixels.
+	'''
+	frame_path = os.path.join(folder, fname + '_frame.txt')
+	if not os.path.exists(frame_path):
+		if fallback is None:
+			raise FileNotFoundError(frame_path)
+		return fallback
+	vals = {}
+	with open(frame_path) as f:
+		for line in f:
+			line = line.strip()
+			if not line:
+				continue
+			key, value = line.split('\t', 1)
+			vals[key] = value
+	calib_x = float(vals['xreal_nm']) / float(vals['xres_px'])
+	calib_y = float(vals['yreal_nm']) / float(vals['yres_px'])
+	if not np.isclose(calib_x, calib_y, atol=atol):
+		raise ValueError(f'Anisotropic calibration in {frame_path}: {calib_x} vs {calib_y}')
+	return calib_x
+
+
 def export_data(folder,sf,fname,lat_params_vec,raw_lat_params,raw_motif,raw_extra_pars,metadata):
 	'''
 	Save variables as csv
