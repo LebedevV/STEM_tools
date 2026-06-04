@@ -19,7 +19,7 @@ def read_msa(path):
 	
 	
 #Local variables
-storage = '/home/vasily	est_EDX_sp/'
+storage = '/home/vasily/test_EDX_sp/'
 folders = os.listdir(storage)
 
 
@@ -151,7 +151,7 @@ sample_areas = []
 reference_areas = []
 
 for a in areas:
-	elif 'ref' in a:
+	if 'ref' in a:
 		reference_areas.append(a)
 		#print('ref',a)
 	else:
