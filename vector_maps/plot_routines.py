@@ -7,13 +7,9 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
 import matplotlib.patches as patches
-import matplotlib
-#matplotlib.rcParams["backend"] = "Agg"
 import scipy.stats as st
 
 import atomap.api as am
-
-import os
 
 def plot_lattice(img,sublattice_list,fname,fl,sf,text):
 	'''
@@ -27,17 +23,13 @@ def plot_lattice(img,sublattice_list,fname,fl,sf,text):
 		text - str, extra text field to be added to the safed file name
 	'''
 	
-	old_backend = matplotlib.get_backend()
-	#plt.close('all')
-	#plt.switch_backend('agg')
-	#plt.ioff()
 	
 	atom_lattice = am.Atom_Lattice(
 			image=img,#.transpose(signal_axes=[1, 0]),#TODO! is this .T needed?
 			sublattice_list=sublattice_list)
 	s = atom_lattice.get_sublattice_atom_list_on_image()
 	
-	q = s.plot()
+	s.plot()
 	p = s._plot
 	fig = p.signal_plot.figure
 	fig.delaxes(fig.axes[1]) #remove colorbar
@@ -50,22 +42,10 @@ def plot_lattice(img,sublattice_list,fname,fl,sf,text):
 	fig.tight_layout()
 	fig.savefig(fl+sf+'/'+text+'.png')
 
-	#mgr = fig.canvas.manager
-	#win = mgr.window
-	#win.close()
-	#mgr.destroy()
-	#fig.canvas.manager.window.close()
-	#fig.clear()
 	plt.close('all')
 	p.close()
 
-	#plt.switch_backend(old_backend)	
-	
-
 def plot_unit_cell(fname_save, lat_params, motif, wrap=True, annotate=False, show_legend=True):
-	import numpy as np
-	import matplotlib.pyplot as plt
-
 	a, b, gamma_deg = lat_params['abg']
 	gamma = np.deg2rad(gamma_deg)
 
@@ -208,7 +188,7 @@ def plot_quiver(fname_save,fin_lat,vdiff_xy,ang,vec_scale,hd_w=2,units_v='$1 \AA
 		norm = mcolors.Normalize(vmin=-np.pi, vmax=np.pi)
 		Q = ax1.quiver(vx, vy, vu, vv, ang, angles='xy', scale_units='xy', scale=vec_scale,cmap='hsv',
 				width=.005,headwidth=hd_w,norm=norm)#,norm=DivergingNorm(ref_angle))#cmap_bwr?
-	qk = ax1.quiverkey(Q, 0.6, 0.92, 0.1, r''+units_v, labelpos='E',
+	ax1.quiverkey(Q, 0.6, 0.92, 0.1, r''+units_v, labelpos='E',
 					   coordinates='figure', fontproperties={'size':18})#,fontsize=22
 	ax1.set_xlabel('nm',fontsize=18)
 	ax1.set_ylabel('nm',fontsize=18)

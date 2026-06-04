@@ -6,14 +6,11 @@ __license__ = "GPL-v3"
 import os
 import numpy as np
 import hyperspy.api as hs
-import copy
 import pandas as pd
-import csv
 import cv2
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
 
 from dicts_handling import unpack_to_dicts
 
@@ -51,7 +48,6 @@ def load_frame(folder,fname,calib_size_by_px): #TODO - we do not really have to 
 	#'''
 	metadata['fname'] = fname#TODO should we return this mdata?
 
-	imsize_px = (s.axes_manager[0].size,s.axes_manager[1].size)
 	#xy directions not checked! has to be verified
 	#d0,d1 = imsize[0]/imsize_px[0],imsize[1]/imsize_px[1]
 	#print(d0,d1)
@@ -74,8 +70,8 @@ def export_data(folder,sf,fname,lat_params_vec,raw_lat_params,raw_motif,raw_extr
 	'''
 
 	#check the existance of the output folder
-	l = os.listdir(folder)
-	if not sf in l:
+	entries = os.listdir(folder)
+	if sf not in entries:
 		os.mkdir(folder+sf)
 		print('Folder %s created' % sf)
 
@@ -196,9 +192,7 @@ def plot_output_page(fname,folder,full_df=None):
 	'''
 	Code has been created with AI assistance (OpenAI GPT-5) and manually reviewed
 	'''
-	#s = '_'+ folder.split('/')[-2]
 	sf = Path(folder.rstrip('/')).name
-	s = '_' + str(sf)
 	pngs = {
 		"a": folder+'../'+fname+".png",
 		"b": folder+sf + '_vmap_rotated.png',
@@ -247,7 +241,7 @@ def plot_output_page(fname,folder,full_df=None):
 	try:
 		av_dist = df.loc['residual_in_pm','0']
 		correct_dist = True
-	except:
+	except KeyError:
 		av_dist = df.loc['std'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' ')).to_numpy()[0]
 		av_dist = np.sqrt(sum(av_dist**2))*1000
 		correct_dist = False
@@ -362,7 +356,6 @@ def plot_output_page_diff(fname,folder):
 	Code has been created with AI assistance (OpenAI GPT-5) and manually reviewed
 	'''
 	sf = Path(folder.rstrip('/')).name
-	s = '_' + str(sf)
 	files = [folder+sf + '_vmap_rotated.png',
 		folder+sf + '_vmap_proj_a.png',
 		folder+sf + '_vmap_proj_a90.png']
