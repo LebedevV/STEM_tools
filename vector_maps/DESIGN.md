@@ -117,11 +117,6 @@ them into the `sub_AB`
 point set the next fit consumes, expressing **fit → re-detect → merge → re-fit**.
 `imsize` (nm) is required.
 
-Limitation (current): the re-detection is *fresh* — it does not yet seed from the
-prior fit's per-sublattice positions the way `fit_lattice_PZT` / `index_all3` do
-(`start_csv`), so it doesn't fully reproduce the seeded PZT re-detect. The step is
-also unverified pending `detect_columns` on the path + a dataset to run against.
-
 ### `add` / `expand` examples
 
 `[[passes]]` is the block spelling of the same `passes` list (use one form per
@@ -238,8 +233,7 @@ scale = 1000
 
 For structures where the weak (low-I) columns can't be detected reliably up
 front, the fit is bootstrapped from the strong columns, re-detecting and
-refining in a loop. Reference implementation: `fit_lattice_v11_test.py` (one
-round of the loop).
+refining in a loop.
 
 The loop (single frame, interactive):
 
@@ -255,7 +249,7 @@ The loop (single frame, interactive):
 7. repeat 3–6 until satisfied — **the stop is a manual choice each round**, not
    an automatic convergence criterion
 
-How v11_test realizes one round (stages 2–6):
+Concretely, one round (stages 2–6):
 
 - stage 2 — `run_fit_pipeline` with `export_sublattice_xy` → per-sublattice
   `…_free_motif_A/_full.csv`, `…_B/_full.csv` (the seeds).
@@ -263,8 +257,6 @@ How v11_test realizes one round (stages 2–6):
   seeded by the fit's A positions.
 - stage 5 — `detect_columns(ptonn=0.4, source_fname=…_A_rerun…diff2.tif,
   start_csv=csv_B)` — detect weak on the strong-subtracted residual, seeded.
-  (`ptonn` = `percent_to_nn`, a per-pass fit window — not the bright/weak
-  selector; that split is the seed + residual mask.)
 - merge — `concat(A, B)` → `…_sub_AB_xyI.csv`.
 - stage 6 — `run_fit_pipeline(dataset_fname="…_sub_AB")` — fit on the merge.
 
