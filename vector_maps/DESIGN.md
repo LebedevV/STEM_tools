@@ -111,8 +111,9 @@ point set carry forward. A step is either a **fit** or a **detect**.
 { name = "redetect", detect = { ptonn = [0.6, 0.4], merge = true, imsize = [5.0, 5.0] } }
 ```
 
-Wraps `detect_columns`: detect each sublattice at its `ptonn` (chained — each on
-the previous one's residual), and `merge = true` combines them into the `sub_AB`
+Wraps `detect_columns`: one detect pass per `ptonn` entry (the `percent_to_nn`
+fit window), each chained on the previous pass's residual; `merge = true` combines
+them into the `sub_AB`
 point set the next fit consumes, expressing **fit → re-detect → merge → re-fit**.
 `imsize` (nm) is required.
 

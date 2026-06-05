@@ -74,7 +74,7 @@ class Expand(BaseModel):
 
 class Detect(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ptonn: list[float]                       # one per sublattice (chained on residuals)
+    ptonn: list[float]                       # percent_to_nn fit window, one per chained residual pass
     merge: bool = True
     sep: float = 2.0
     sigma1: float = 1.0
