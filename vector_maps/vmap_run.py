@@ -133,8 +133,9 @@ def _merge_body(parent, body):
 
 
 def _run_detect(d, folder, fname):
-    # PZT-style re-detection: chained detect per ptonn (each on the prior residual),
-    # merged into one <fname>_sub_AB dataset. Mirrors index_all3 / fit_lattice_PZT.
+    # PZT-style re-detection: one chained detect pass per ptonn entry (each on the
+    # prior residual; ptonn = percent_to_nn fit window), merged into one
+    # <fname>_sub_AB dataset. Mirrors index_all3 / fit_lattice_PZT.
     # UNVERIFIED: needs detect_columns on the path + image data to exercise.
     from detect_columns import detect_columns
     parts, source = [], None

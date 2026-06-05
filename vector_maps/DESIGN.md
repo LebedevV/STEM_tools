@@ -111,15 +111,11 @@ point set carry forward. A step is either a **fit** or a **detect**.
 { name = "redetect", detect = { ptonn = [0.6, 0.4], merge = true, imsize = [5.0, 5.0] } }
 ```
 
-Wraps `detect_columns`: detect each sublattice at its `ptonn` (chained — each on
-the previous one's residual), and `merge = true` combines them into the `sub_AB`
+Wraps `detect_columns`: one detect pass per `ptonn` entry (the `percent_to_nn`
+fit window), each chained on the previous pass's residual; `merge = true` combines
+them into the `sub_AB`
 point set the next fit consumes, expressing **fit → re-detect → merge → re-fit**.
 `imsize` (nm) is required.
-
-Limitation (current): the re-detection is *fresh* — it does not yet seed from the
-prior fit's per-sublattice positions the way `fit_lattice_PZT` / `index_all3` do
-(`start_csv`), so it doesn't fully reproduce the seeded PZT re-detect. The step is
-also unverified pending `detect_columns` on the path + a dataset to run against.
 
 ### `add` / `expand` examples
 
@@ -232,6 +228,59 @@ scale = 1000
   one `refinement_run` call with its params, unchanged.
 - Detect steps wrap `detect_columns`; calibration uses `read_frame_calib`. Both
   land with the driver-harmonisation work (not yet in `main`).
+
+## Phase 2 — iterative intensity-stratified detect/fit
+
+For structures where the weak (low-I) columns can't be detected reliably up
+front, the fit is bootstrapped from the strong columns, re-detecting and
+refining in a loop.
+
+The loop (single frame, interactive):
+
+1. detect the bright columns (set by `separation` / `threshold`)
+2. fit the lattice on them
+3. re-detect the bright columns, **seeded by the fit**
+4. add the weak columns as a fixed schema at guessed coords (e.g. `(0.25, 0.75)`,
+   `fit = [false, false]`, no `eq` needed) — **no refit**; this only projects
+   them through the current lattice to seed step 5
+5. detect the weak columns: seeded by the schema, on the residual after the
+   strong model (masked)
+6. fit the full structure (weak now free)
+7. repeat 3–6 until satisfied — **the stop is a manual choice each round**, not
+   an automatic convergence criterion
+
+Concretely, one round (stages 2–6):
+
+- stage 2 — `run_fit_pipeline` with `export_sublattice_xy` → per-sublattice
+  `…_free_motif_A/_full.csv`, `…_B/_full.csv` (the seeds).
+- stage 3 — `detect_columns(ptonn=0.6, start_csv=csv_A)` — re-detect bright,
+  seeded by the fit's A positions.
+- stage 5 — `detect_columns(ptonn=0.4, source_fname=…_A_rerun…diff2.tif,
+  start_csv=csv_B)` — detect weak on the strong-subtracted residual, seeded.
+- merge — `concat(A, B)` → `…_sub_AB_xyI.csv`.
+- stage 6 — `run_fit_pipeline(dataset_fname="…_sub_AB")` — fit on the merge.
+
+New primitives beyond phase 1:
+
+- **A — seeded detection.** A detect step takes a seed (`start_csv`) = the prior
+  fit's per-sublattice output (or the projected guessed schema). The phase-1
+  detect step runs fresh; this adds the seed, and the feeding fit pass must set
+  `export_sublattice_xy`.
+- **B — manual `repeat` loop.** A schedule block wrapping the detect→fit body,
+  repeated until the user stops — manual, per round, no automatic criterion.
+  Interactive only.
+- **C — intensity-scoped / masked detection.** `source_fname` (detect on the
+  residual after the prior sublattice's model) does the scoping; `separation` /
+  `threshold` pick the columns. The phase-1 detect step already chains residuals
+  and merges; this scopes it by intensity.
+
+Stage 4 (add the schema) reuses phase-1 primitives: a plot-only pass
+(`refine = false`) with `add` at guessed coords — no new construct.
+
+Because B's stop is manual, the loop is the **single-frame, interactive
+recipe-building** phase. The batch sweep does not run it: once the recipe (pass
+sequence + seed + schema) is settled on one frame, the sweep **replays it
+headless** across the manifest.
 
 ## Deferred
 

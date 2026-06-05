@@ -3,17 +3,11 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
+import os
+
 from routines import *
 from refinement_routines import *
 from plot_routines import *
-
-#Size of a virtual set of points; has to be large for large imgs, but more demanding
-#ij_max = 300
-#ij_max = 100
-
-###############################################
-# Here we are starting the refinement
-##############################################
 
 #Meant to be 0.3867, 0.5469
 lat_params = { 'abg':[0.3805, 0.5369, 89.75],
@@ -24,7 +18,6 @@ lat_params = { 'abg':[0.3805, 0.5369, 89.75],
 
 #Atom at (0,0); first sublattice. Since all other atoms are functionally connected to this one,
 #it is reasonable to fix it due to a full correlation with shx/shy (lat_params['base'][0] and lat_params['base'][1])
-
 motif = {'A_1':{'atom':'Si_1',
 			'coord':(0.,0.),
 			'I':1,
@@ -40,7 +33,7 @@ motif['A_1c'] = {	'atom':'Si_2',
 			'fit':[True,True],
 			'eq':  ["= motif['A_1'][0] + extra_pars['centering_a']", "= motif['A_1'][1] + extra_pars['centering_b']"]
 			}
-			
+
 #Second sublattice; 'A_1' + dumbbell vector (in polar coordinates)
 motif['B_1'] =  {'atom':'Si_3',
 			'coord':(0.,0.2),
@@ -58,74 +51,60 @@ motif['B_1c'] = {'atom':'Si_4',
 			'fit':[True,True],
 			'eq':["= motif['B_1'][0] + extra_pars['centering_a']", "= motif['B_1'][1] + extra_pars['centering_b']"]}
 
-#Extra variables - dumbbell vector in absolute polar coordinated relative to b; expected to be (L,0) but can be refined
-#Centering vector in fractional coordinates
-#True/False enables/disables refinement
-
+#Extra variables - dumbbell vector in absolute polar coordinates relative to b; expected to be (L,0) but can be refined
+#Centering vector in fractional coordinates; True/False enables/disables refinement
 extra_pars = {'db_dist':(0.1,True),
 		'db_angle':(0,True),
 		'centering_a':(0.5,True),
 		'centering_b':(0.5,True)}
-		
-		
-print(motif)
+
+#Calibration: only the nm-per-pixel ratio matters (1024px frame from 90% of a 16nm scan)
+CALIB = 16/1024*.9  # nm/pixel; override with --calib or a <fname>_frame.txt sidecar
 
 
-folder = '/home/vasily/test_vmap/'
-fname = 'test_Si'
-
-#Calibrations. Only ratio is important
-#this 1024px frame was acquired from 90% area of 16nm scan
-calib = 16/1024*.9 #units - nm per pixel
-
-
-#Manual presets for shifts/lattice rotations
-sub_area = [2,4,2,4]#in nm
-
-save_folder_name = None
-_,lat_params_vec = refinement_run(folder,save_folder_name,fname,calib,lat_params,motif,extra_pars=extra_pars,
-					show_initial_spots=True,vec_scale=0.1,sub_area=sub_area,max_dist=0.1)
-lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
-print(lat_params_prefit,motif_prefit,extra_pars_prefit)
-
-
-#Automated refinements with gradual expansion of the ROI
-st_p = 2
-r = 2
-k = st_p+r
-while k<16:
-	sub_area = [st_p,k,st_p,k]
-	print('Auto sub-area',sub_area)
-	save_folder_name = None
-	
-	lat_params_prefit['fit_abg'] = [False,False,False]
-	
-	_,lat_params_vec = refinement_run(folder,save_folder_name,fname,calib,lat_params_prefit,motif_prefit,extra_pars=extra_pars_prefit,
-						show_initial_spots=False,vec_scale=0.01,sub_area=sub_area,max_dist=0.1)
+def run_fit_pipeline(folder, fname, calib, preview=False):
+	#prefit on a manual ROI
+	sub_area = [2,4,2,4]  #in nm
+	_,lat_params_vec = refinement_run(folder,None,fname,calib,lat_params,motif,extra_pars=extra_pars,
+						show_initial_spots=preview,vec_scale=0.1,sub_area=sub_area,max_dist=0.1)
 	lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
-	
-	lat_params_prefit['fit_abg'] = [True,True,True]
-	
-	_,lat_params_vec = refinement_run(folder,save_folder_name,fname,calib,lat_params_prefit,motif_prefit,extra_pars=extra_pars_prefit,
-						show_initial_spots=False,vec_scale=0.01,sub_area=sub_area,max_dist=0.1)
+
+	#automated refinements with gradual expansion of the ROI
+	st_p = 2
+	r = 2
+	k = st_p+r
+	while k<16:
+		sub_area = [st_p,k,st_p,k]
+		lat_params_prefit['fit_abg'] = [False,False,False]
+		_,lat_params_vec = refinement_run(folder,None,fname,calib,lat_params_prefit,motif_prefit,extra_pars=extra_pars_prefit,
+							show_initial_spots=False,vec_scale=0.01,sub_area=sub_area,max_dist=0.1)
+		lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
+		lat_params_prefit['fit_abg'] = [True,True,True]
+		_,lat_params_vec = refinement_run(folder,None,fname,calib,lat_params_prefit,motif_prefit,extra_pars=extra_pars_prefit,
+							show_initial_spots=False,vec_scale=0.01,sub_area=sub_area,max_dist=0.1)
+		lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
+		k+=2
+
+	#full image refinement with outputs
+	_,lat_params_vec = refinement_run(folder,fname+'_fix_motif',fname,calib,lat_params,motif,extra_pars=extra_pars_prefit,
+						show_initial_spots=preview,vec_scale=0.1,sub_area=None,max_dist=0.1)
 	lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
-	
-	k+=2
 
-#Full image refinement with a preview and outputs
-sub_area = None
-save_folder_name = fname+'_fix_motif'
-_,lat_params_vec = refinement_run(folder,save_folder_name,fname,calib,lat_params,motif,extra_pars=extra_pars_prefit,
-					show_initial_spots=True,vec_scale=0.1,sub_area=sub_area,max_dist=0.1)
-lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
-
-#central area refinement
-sub_area = [2,12,2,12]
-#sub_area = [1,6,1,6]
-
-save_folder_name = fname+'_fix_motif_center'
-_,lat_params_vec = refinement_run(folder,save_folder_name,fname,calib,lat_params,motif,extra_pars=extra_pars_prefit,
-					show_initial_spots=True,vec_scale=0.1,sub_area=sub_area,max_dist=0.1)
-lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
+	#central area refinement
+	meta,lat_params_vec = refinement_run(folder,fname+'_fix_motif_center',fname,calib,lat_params,motif,extra_pars=extra_pars_prefit,
+						show_initial_spots=preview,vec_scale=0.1,sub_area=[2,12,2,12],max_dist=0.1)
+	unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
+	return meta
 
 
+if __name__ == "__main__":
+	import argparse
+	p = argparse.ArgumentParser()
+	p.add_argument("--folder", default="./")
+	p.add_argument("--fname", required=True)
+	p.add_argument("--calib", type=float)
+	p.add_argument("--preview", action="store_true")
+	args = p.parse_args()
+	folder = os.path.join(args.folder, "")
+	calib = args.calib if args.calib is not None else read_frame_calib(folder, args.fname, fallback=CALIB)
+	run_fit_pipeline(folder, args.fname, calib, preview=args.preview)
