@@ -34,7 +34,7 @@ motif = {'A_1':{'atom':'Pb',
 extra_pars = {}
 
 
-def run_fit_pipeline(folder, fname, calib, preview=False, dataset_fname=None):
+def run_fit_pipeline(folder, fname, calib, preview=False, dataset_fname=None, unit_cell=False):
 	if dataset_fname is None:
 		dataset_fname = fname
 
@@ -61,6 +61,10 @@ def run_fit_pipeline(folder, fname, calib, preview=False, dataset_fname=None):
 				export_sublattice_xy=True,dataset_fname=dataset_fname)
 	lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params_prefit, motif_prefit, extra_pars_prefit)
 
+	if unit_cell:
+		from unit_cell_average import unit_cell_average_to_tiffs
+		unit_cell_average_to_tiffs(folder + fname + ".tif", lat_params_prefit, calib)
+
 	return metadata
 
 
@@ -73,6 +77,8 @@ if __name__ == "__main__":
 	parser.add_argument("--calib", type=float)
 	parser.add_argument("--imsize", nargs=2, type=float, default=None)
 	parser.add_argument("--preview", action="store_true")
+	parser.add_argument("--unit-cell", dest="unit_cell", action="store_true",
+		help="after the final fit, write <fname>_uc_{mean,std,count}.tif")
 	args = parser.parse_args()
 
 	folder_s = os.path.join(args.folder, "")
@@ -135,4 +141,4 @@ if __name__ == "__main__":
 	df_AB.to_csv(csv_AB, index=False, float_format="%.8g")
 
 	print('Second refinement')
-	run_fit_pipeline(folder=folder_s, fname=args.fname, calib=calib, preview=args.preview, dataset_fname=merged_name)
+	run_fit_pipeline(folder=folder_s, fname=args.fname, calib=calib, preview=args.preview, dataset_fname=merged_name, unit_cell=args.unit_cell)

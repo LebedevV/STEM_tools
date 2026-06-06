@@ -62,7 +62,7 @@ extra_pars = {'db_dist':(0.1,True),
 CALIB = 16/1024*.9  # nm/pixel; override with --calib or a <fname>_frame.txt sidecar
 
 
-def run_fit_pipeline(folder, fname, calib, preview=False):
+def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False):
 	#prefit on a manual ROI
 	sub_area = [2,4,2,4]  #in nm
 	_,lat_params_vec = refinement_run(folder,None,fname,calib,lat_params,motif,extra_pars=extra_pars,
@@ -93,7 +93,10 @@ def run_fit_pipeline(folder, fname, calib, preview=False):
 	#central area refinement
 	meta,lat_params_vec = refinement_run(folder,fname+'_fix_motif_center',fname,calib,lat_params,motif,extra_pars=extra_pars_prefit,
 						show_initial_spots=preview,vec_scale=0.1,sub_area=[2,12,2,12],max_dist=0.1)
-	unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
+	lp, _, _ = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
+	if unit_cell:
+		from unit_cell_average import unit_cell_average_to_tiffs
+		unit_cell_average_to_tiffs(folder + fname + ".tif", lp, calib)
 	return meta
 
 
@@ -104,7 +107,9 @@ if __name__ == "__main__":
 	p.add_argument("--fname", required=True)
 	p.add_argument("--calib", type=float)
 	p.add_argument("--preview", action="store_true")
+	p.add_argument("--unit-cell", dest="unit_cell", action="store_true",
+		       help="after the fit, write <fname>_uc_{mean,std,count}.tif")
 	args = p.parse_args()
 	folder = os.path.join(args.folder, "")
 	calib = args.calib if args.calib is not None else read_frame_calib(folder, args.fname, fallback=CALIB)
-	run_fit_pipeline(folder, args.fname, calib, preview=args.preview)
+	run_fit_pipeline(folder, args.fname, calib, preview=args.preview, unit_cell=args.unit_cell)
