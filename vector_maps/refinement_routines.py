@@ -300,7 +300,7 @@ def load_dataset_auto(folder, fname):
 	)
 
 
-def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=False,extra_shift_ab=None,max_dist=0,sub_area=None):
+def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=False,max_dist=0,sub_area=None):
 	#TODO proper pandas
 	if isinstance(dataset, pd.DataFrame):
 		print("CSV / DataFrame dataset detected")
@@ -348,17 +348,7 @@ def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=Fal
 	if recall_zero:
 		bring_ith_atom_to_0 = int(len(observed_xy)/2)
 		lat_params['base'] = [observed_xy[bring_ith_atom_to_0,0],observed_xy[bring_ith_atom_to_0,1],lat_params['base'][2]]
-	
-	#If extra shift is provided in fraq coordinates
-	#we can convert it to (x,y) with the standard functionality as a r-vector to the (shx,shy) for u.c. with ij [0,0]
-	if extra_shift_ab is not None:
-		print(np.array(list(lat_params['abg'])+list(lat_params['base'])+list(extra_shift_ab)))
-		tmp_val,_,_ = get_coords_from_ij(np.array([(0,0)]),np.array(list(lat_params['abg'])+list(lat_params['base'])+list(extra_shift_ab)),max_lim,lat_params, motif, extra_pars,crop=False)
-		tmp_val = tmp_val[0]
-		print(lat_params['base'])
-		lat_params['base'] = [lat_params['base'][0]+tmp_val[0],lat_params['base'][1]+tmp_val[1],lat_params['base'][2]]
-		print(lat_params['base'])
-		
+
 	#vectors to construct theor from ij
 	param_vec,fit_param_vec,_,_ = dicts_to_vector(lat_params, motif, extra_pars)
 	print(param_vec)
@@ -388,8 +378,23 @@ def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=Fal
 
 
 
+def ab_shift_vector(lat_params, motif, extra_pars, shift_ab):
+	"""Cartesian (nm) origin shift re-referencing the lattice from sublattice
+	shift_ab[0] to shift_ab[1]: the difference of their cell-(0,0) positions.
+	(shx,shy) cancels in that difference, so it is apply-once."""
+	key_a, key_b = shift_ab
+	used = [k for k in motif if motif[k].get('use', True)]
+	for k in (key_a, key_b):
+		if k not in used:
+			raise KeyError(f"shift_ab atom {k!r} is not a used sublattice; have {used}")
+	param_vec, _, _, _ = dicts_to_vector(lat_params, motif, extra_pars)
+	coords, _, _ = get_coords_from_ij(np.array([(0, 0)]), param_vec, max_lim, lat_params, motif, extra_pars, crop=False)
+	pa, pb = coords[used.index(key_a)], coords[used.index(key_b)]
+	return float(pb[0] - pa[0]), float(pb[1] - pa[1])
+
+
 def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_zero=False,show_initial_spots=False,vec_scale=0.05,
-			do_fit=True,relative_to=None,kernel=4,extra_shift_ab=None,sub_area=None,max_dist=0,export_sublattice_xy=False,dataset_fname=None):
+			do_fit=True,relative_to=None,kernel=4,shift_ab=None,do_fft_align=False,do_fft_prefit=False,sub_area=None,max_dist=0,export_sublattice_xy=False,dataset_fname=None):
 	if not do_fit:
 		recall_zero=False
 	
@@ -398,9 +403,23 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 	dataset = load_dataset_auto(folder, dataset_fname if dataset_fname is not None else fname)
 	#dataset = np.load(folder+fname.split('.')[0]+'.npy').T
 	#dataset = load_dataset_auto(folder, fname)
-	
+
+	# FFT prefit: seed the lattice from the raw image before fitting -- rotation
+	# (align) or also a,b,gamma (prefit). Runs before shift_ab (which needs abg/phi).
+	if do_fft_align or do_fft_prefit:
+		from fft_prefit import fft_prefit
+		_fft_img = cv2.imread(folder + fname + '.tif', cv2.IMREAD_UNCHANGED)
+		lat_params.update(fft_prefit(_fft_img, lat_params, calib, refine_abg=do_fft_prefit))
+
+	# Re-reference the origin from sublattice A to B once, before any
+	# preprocess/fit pass (additive; must not run inside preprocess_dataset,
+	# which is called repeatedly).
+	if shift_ab is not None:
+		dx, dy = ab_shift_vector(lat_params, motif, extra_pars, shift_ab)
+		lat_params['base'] = [lat_params['base'][0] + dx, lat_params['base'][1] + dy, lat_params['base'][2]]
+
 	ij_cr, th_relevant, observed_xy, _, _ = preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=recall_zero,
-							extra_shift_ab=extra_shift_ab,max_dist=max_dist,sub_area=sub_area) #This one for a preview; no need to load the dataframe
+							max_dist=max_dist,sub_area=sub_area) #This one for a preview; no need to load the dataframe
 	
 
 
@@ -459,7 +478,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 			
 			ij_cr, th_relevant, _, _, _ = preprocess_dataset(lat_params,motif,extra_pars,
 										dataset,calib,recall_zero=recall_zero,
-				extra_shift_ab=extra_shift_ab,max_dist=max_dist,sub_area=sub_area)
+				max_dist=max_dist,sub_area=sub_area)
 			sc.set_offsets(np.c_[th_relevant])	 # update the scatter in-place
 			
 			#update set of zeros
@@ -481,14 +500,50 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		ax_reset = fig.add_axes([0.87, 0.25, 0.08, 0.08])
 		btn = Button(ax_reset, 'Reset')
 		btn.on_clicked(lambda evt: (s_a.reset(), s_b.reset(), s_r.reset(), s_shx.reset(), s_shy.reset(), s_g.reset()))
-			
+
+		ax_done = fig.add_axes([0.87, 0.15, 0.08, 0.08])
+		btn_done = Button(ax_done, 'Done!')
+		btn_done.on_clicked(lambda evt: plt.close(fig))
+
+		ax_ab = fig.add_axes([0.76, 0.15, 0.10, 0.08])
+		btn_ab = Button(ax_ab, 'A->B')
+
+		def _widen_set(sl, v):                          # set a slider, widening its range if needed
+			if v < sl.valmin or v > sl.valmax:
+				sl.valmin, sl.valmax = min(sl.valmin, v), max(sl.valmax, v)
+				sl.ax.set_xlim(sl.valmin, sl.valmax)
+			sl.set_val(v)
+
+		def _shift_ab_clicked(evt):
+			dx, dy = ab_shift_vector(lat_params, motif, extra_pars, ('A_1', 'B_1'))
+			_widen_set(s_shx, s_shx.val + dx)
+			_widen_set(s_shy, s_shy.val + dy)
+		btn_ab.on_clicked(_shift_ab_clicked)
+
+		from fft_prefit import fft_prefit
+
+		def _fft_clicked(refine_abg):
+			def handler(evt):
+				new = fft_prefit(_im, lat_params, calib, refine_abg=refine_abg)
+				_widen_set(s_r, new['base'][2])
+				if refine_abg:
+					for sl, v in zip((s_a, s_b, s_g), new['abg']):
+						_widen_set(sl, v)
+			return handler
+
+		ax_fftr = fig.add_axes([0.65, 0.25, 0.10, 0.08])
+		btn_fftr = Button(ax_fftr, 'FFT rot')
+		btn_fftr.on_clicked(_fft_clicked(False))
+		ax_ffta = fig.add_axes([0.65, 0.15, 0.10, 0.08])
+		btn_ffta = Button(ax_ffta, 'FFT abg')
+		btn_ffta.on_clicked(_fft_clicked(True))
+
 		plt.show()
 		print('Params',lat_params)
 
 
 	ij_cr, th_relevant, observed_xy, obs_cr, lookup_df = preprocess_dataset(lat_params,motif,extra_pars,
 								dataset,calib,recall_zero=recall_zero,
-								extra_shift_ab=extra_shift_ab,
 								max_dist=max_dist,sub_area=sub_area)
 
 	lookup_t = lookup_df['lookup_t'].values

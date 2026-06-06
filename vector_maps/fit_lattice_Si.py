@@ -62,11 +62,12 @@ extra_pars = {'db_dist':(0.1,True),
 CALIB = 16/1024*.9  # nm/pixel; override with --calib or a <fname>_frame.txt sidecar
 
 
-def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False):
+def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False, shift_ab=None, do_fft_align=False, do_fft_prefit=False):
 	#prefit on a manual ROI
 	sub_area = [2,4,2,4]  #in nm
 	_,lat_params_vec = refinement_run(folder,None,fname,calib,lat_params,motif,extra_pars=extra_pars,
-						show_initial_spots=preview,vec_scale=0.1,sub_area=sub_area,max_dist=0.1)
+						show_initial_spots=preview,vec_scale=0.1,sub_area=sub_area,max_dist=0.1,
+						do_fft_align=do_fft_align,do_fft_prefit=do_fft_prefit)
 	lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
 
 	#automated refinements with gradual expansion of the ROI
@@ -92,7 +93,7 @@ def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False):
 
 	#central area refinement
 	meta,lat_params_vec = refinement_run(folder,fname+'_fix_motif_center',fname,calib,lat_params,motif,extra_pars=extra_pars_prefit,
-						show_initial_spots=preview,vec_scale=0.1,sub_area=[2,12,2,12],max_dist=0.1)
+						show_initial_spots=preview,vec_scale=0.1,sub_area=[2,12,2,12],max_dist=0.1,shift_ab=shift_ab)
 	lp, _, _ = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
 	if unit_cell:
 		from unit_cell_average import unit_cell_average_to_tiffs
@@ -109,7 +110,15 @@ if __name__ == "__main__":
 	p.add_argument("--preview", action="store_true")
 	p.add_argument("--unit-cell", dest="unit_cell", action="store_true",
 		       help="after the fit, write <fname>_uc_{mean,std,count}.tif")
+	p.add_argument("--shift-ab", dest="shift_ab", action="store_true",
+		       help="re-reference the origin A_1->B_1 before the final fit")
+	p.add_argument("--fft-align", dest="fft_align", action="store_true",
+		       help="FFT-seed the frame rotation before the first fit")
+	p.add_argument("--fft-prefit", dest="fft_prefit", action="store_true",
+		       help="FFT-seed rotation + a,b,gamma before the first fit")
 	args = p.parse_args()
 	folder = os.path.join(args.folder, "")
 	calib = args.calib if args.calib is not None else read_frame_calib(folder, args.fname, fallback=CALIB)
-	run_fit_pipeline(folder, args.fname, calib, preview=args.preview, unit_cell=args.unit_cell)
+	run_fit_pipeline(folder, args.fname, calib, preview=args.preview, unit_cell=args.unit_cell,
+			 shift_ab=('A_1', 'B_1') if args.shift_ab else None,
+			 do_fft_align=args.fft_align, do_fft_prefit=args.fft_prefit)

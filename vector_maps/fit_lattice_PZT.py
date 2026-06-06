@@ -34,14 +34,15 @@ motif = {'A_1':{'atom':'Pb',
 extra_pars = {}
 
 
-def run_fit_pipeline(folder, fname, calib, preview=False, dataset_fname=None, unit_cell=False):
+def run_fit_pipeline(folder, fname, calib, preview=False, dataset_fname=None, unit_cell=False, shift_ab=None, do_fft_align=False, do_fft_prefit=False):
 	if dataset_fname is None:
 		dataset_fname = fname
 
 	sub_area = [1,4,1,4]
 	_,lat_params_vec = refinement_run(folder,None,fname,calib,lat_params,motif,extra_pars=extra_pars,
 				show_initial_spots=preview,vec_scale=0.1,sub_area=sub_area,
-				max_dist=0.1,dataset_fname=dataset_fname)
+				max_dist=0.1,dataset_fname=dataset_fname,
+				do_fft_align=do_fft_align,do_fft_prefit=do_fft_prefit)
 	lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
 
 	sub_area = [0.5,4.5,0.5,4.5]
@@ -58,7 +59,7 @@ def run_fit_pipeline(folder, fname, calib, preview=False, dataset_fname=None, un
 	metadata,lat_params_vec = refinement_run(folder,save_folder_name,fname,calib,lat_params_prefit,motif_prefit,
 				show_initial_spots=preview,vec_scale=0.1,
 				max_dist=0.1,sub_area=sub_area,
-				export_sublattice_xy=True,dataset_fname=dataset_fname)
+				export_sublattice_xy=True,dataset_fname=dataset_fname,shift_ab=shift_ab)
 	lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params_prefit, motif_prefit, extra_pars_prefit)
 
 	if unit_cell:
@@ -79,6 +80,12 @@ if __name__ == "__main__":
 	parser.add_argument("--preview", action="store_true")
 	parser.add_argument("--unit-cell", dest="unit_cell", action="store_true",
 		help="after the final fit, write <fname>_uc_{mean,std,count}.tif")
+	parser.add_argument("--shift-ab", dest="shift_ab", action="store_true",
+		help="re-reference the origin A_1->B_1 before the final fit")
+	parser.add_argument("--fft-align", dest="fft_align", action="store_true",
+		help="FFT-seed the frame rotation before the first fit")
+	parser.add_argument("--fft-prefit", dest="fft_prefit", action="store_true",
+		help="FFT-seed rotation + a,b,gamma before the first fit")
 	args = parser.parse_args()
 
 	folder_s = os.path.join(args.folder, "")
@@ -141,4 +148,6 @@ if __name__ == "__main__":
 	df_AB.to_csv(csv_AB, index=False, float_format="%.8g")
 
 	print('Second refinement')
-	run_fit_pipeline(folder=folder_s, fname=args.fname, calib=calib, preview=args.preview, dataset_fname=merged_name, unit_cell=args.unit_cell)
+	run_fit_pipeline(folder=folder_s, fname=args.fname, calib=calib, preview=args.preview, dataset_fname=merged_name,
+			 unit_cell=args.unit_cell, shift_ab=('A_1', 'B_1') if args.shift_ab else None,
+			 do_fft_align=args.fft_align, do_fft_prefit=args.fft_prefit)
