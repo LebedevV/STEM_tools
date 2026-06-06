@@ -27,13 +27,12 @@ def _synth(a, b, o, H=220, W=200, noise=0.0, seed=0):
 	return img
 
 
-def test_resample_floor_below_raw_uniform_count():
-	img = _synth(A, B, ORIG)                              # identical content in every cell
-	mean, sd_res, count = average_unit_cell(img, A, B, ORIG, method="resample")
-	_, sd_raw, _ = average_unit_cell(img, A, B, ORIG, method="raw")
-	assert np.nanmedian(sd_res) < 0.1 * np.nanmedian(sd_raw)   # resample kills the gradient floor
-	assert np.nanmin(count) == np.nanmax(count)               # uniform count
+def test_resample_uniform_count_zero_floor():
+	# identical cells -> resample reads the same (u,v) in every cell: ~0 std, uniform count
+	mean, sd, count = average_unit_cell(_synth(A, B, ORIG), A, B, ORIG, method="resample")
+	assert np.nanmin(count) == np.nanmax(count)
 	assert np.all(np.isfinite(mean))
+	assert np.nanmax(sd) < 1e-6
 
 
 def test_raw_tracks_noise_resample_attenuates():
@@ -81,6 +80,15 @@ def test_sub_area_restricts_to_roi():
 	full = average_unit_cell(img, A, B, ORIG)[2].sum()
 	roi = average_unit_cell(img, A, B, ORIG, sub_area=[60, 140, 60, 140])[2].sum()
 	assert 0 < roi < full                              # ROI folds strictly fewer cells
+
+
+def test_raw_native_pixel_footprint():
+	# raw output is the cell's real-px bounding box (true sheared shape), distinct
+	# from resample's fractional N x M, with NaN at the bbox corners outside the cell.
+	rm = average_unit_cell(_synth(A, B, ORIG), A, B, ORIG, method="raw")[0]
+	em = average_unit_cell(_synth(A, B, ORIG), A, B, ORIG, method="resample")[0]
+	assert rm.shape != em.shape
+	assert np.isnan(rm).any()
 
 
 if __name__ == "__main__":

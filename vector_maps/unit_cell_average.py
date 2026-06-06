@@ -67,9 +67,13 @@ def _finalize(s1, s2, cnt):
 	return mean, std, cnt.astype(np.float64)
 
 
-def _accum_raw(img, geom, det, N, M, full_cells_only, box):
-	# scatter actual pixels into their (u,v) bin at the cell's native resolution;
-	# no value interpolation. Bin counts are uneven (orthogonal grid vs oblique cell).
+def _accum_raw(img, geom, det, full_cells_only, box):
+	# Fold actual pixels onto one cell's native pixel footprint: each pixel -> its
+	# cell (i,j) -> its integer px offset within that cell, placed once (no tiling,
+	# no interpolation). The cell is shown once in its parallelogram bbox; rounding
+	# the oblique edge makes a staircase (pixels protrude past it on one side, gaps
+	# on the other), and bins no pixel centre lands in -- gaps + the bbox corners
+	# outside the parallelogram -- stay empty (NaN in _finalize).
 	ax, ay, bx, by, x0, y0 = geom
 	H, W = img.shape
 	xlo, xhi, ylo, yhi = box
@@ -77,17 +81,24 @@ def _accum_raw(img, geom, det, N, M, full_cells_only, box):
 	u = (by * (xs - x0) - bx * (ys - y0)) / det
 	v = (-ay * (xs - x0) + ax * (ys - y0)) / det
 	i, j = np.floor(u), np.floor(v)
+	dx = (u - i) * ax + (v - j) * bx                # in-cell offset, real px
+	dy = (u - i) * ay + (v - j) * by
+	cxs = np.array([0.0, ax, bx, ax + bx])          # parallelogram corners -> bbox
+	cys = np.array([0.0, ay, by, ay + by])
+	x0c, y0c = cxs.min(), cys.min()
+	ncol = int(np.ceil(cxs.max() - x0c)) + 1
+	nrow = int(np.ceil(cys.max() - y0c)) + 1
 	keep = np.isfinite(img) & (xs >= xlo) & (xs <= xhi) & (ys >= ylo) & (ys <= yhi)
 	if full_cells_only:
 		keep &= _full_mask(i, j, geom, box)
-	bi = np.clip(((u - i) * N).astype(np.int64), 0, N - 1)
-	bj = np.clip(((v - j) * M).astype(np.int64), 0, M - 1)
-	flat = (bi * M + bj)[keep]
+	bcol = np.clip(np.round(dx - x0c).astype(np.int64), 0, ncol - 1)
+	brow = np.clip(np.round(dy - y0c).astype(np.int64), 0, nrow - 1)
+	flat = (brow * ncol + bcol)[keep]
 	vals = img[keep]
-	cnt = np.bincount(flat, minlength=N * M).astype(np.float64)
-	s1 = np.bincount(flat, weights=vals, minlength=N * M)
-	s2 = np.bincount(flat, weights=vals * vals, minlength=N * M)
-	return s1.reshape(N, M), s2.reshape(N, M), cnt.reshape(N, M)
+	cnt = np.bincount(flat, minlength=nrow * ncol).astype(np.float64)
+	s1 = np.bincount(flat, weights=vals, minlength=nrow * ncol)
+	s2 = np.bincount(flat, weights=vals * vals, minlength=nrow * ncol)
+	return s1.reshape(nrow, ncol), s2.reshape(nrow, ncol), cnt.reshape(nrow, ncol)
 
 
 def _accum_resample(img, geom, det, N, M, full_cells_only, box):
@@ -138,15 +149,19 @@ def average_unit_cell(image, a_px, b_px, origin_px, sub_area=None, shape=None,
 	                 cell's native pixel extent (round|a|, round|b|).
 	full_cells_only  use only cells wholly inside the ROI — drops poorly-fit border
 	                 cells (default True).
-	method           "resample" (default): bilinear-read each cell at the same (u,v)
-	                 grid, average across cells -> uniform count, std = cell-to-cell
-	                 variation. "raw": scatter actual pixels into their bin at the
-	                 native resolution, no interpolation -> raw values, uneven count.
-	                 `shape` is rejected for "raw" (a chosen output grid *is* a
-	                 resampling, so it only belongs to the interpolating path).
+	method           "resample" (default): bilinear-read each cell at the same
+	                 fractional (u,v) grid and average across cells -> an N x M
+	                 fractional cell, uniform count, std = cell-to-cell variation.
+	                 "raw": fold the actual pixels onto the cell's native pixel
+	                 footprint (each pixel -> its cell -> its integer px offset),
+	                 placed once, no interpolation -> the cell in real space (true
+	                 sheared shape) with staircased edges; bins no pixel centre lands
+	                 in (gaps + bbox corners outside the cell) are NaN. `shape` is
+	                 rejected for "raw".
 
-	Returns (mean, std, count), each (N, M), indexed [u_bin, v_bin]. Empty bins are
-	NaN; std (sample, ddof=1) is NaN where count < 2. The cell is a torus — no seam.
+	Returns (mean, std, count). For "resample" the grid is (N, M) in fractional
+	coords (u along a, v along b); for "raw" it is the cell's px bounding box in real
+	space. Empty / uncovered bins are NaN; std (sample, ddof=1) is NaN where count < 2.
 	"""
 	img = np.asarray(image, dtype=np.float64)
 	H, W = img.shape
@@ -155,9 +170,8 @@ def average_unit_cell(image, a_px, b_px, origin_px, sub_area=None, shape=None,
 	box = _box(W, H, sub_area)
 	if method == "raw":
 		if shape is not None:
-			raise ValueError("shape is resample-only; 'raw' uses the native cell grid")
-		N, M = _native_shape(ax, ay, bx, by)
-		s1, s2, cnt = _accum_raw(img, geom, det, N, M, full_cells_only, box)
+			raise ValueError("shape is resample-only; 'raw' uses the native pixel footprint")
+		s1, s2, cnt = _accum_raw(img, geom, det, full_cells_only, box)
 	elif method == "resample":
 		N, M = (int(shape[0]), int(shape[1])) if shape is not None else _native_shape(ax, ay, bx, by)
 		s1, s2, cnt = _accum_resample(img, geom, det, N, M, full_cells_only, box)
