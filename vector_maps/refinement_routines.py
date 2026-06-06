@@ -497,7 +497,20 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		ax_done = fig.add_axes([0.87, 0.15, 0.08, 0.08])
 		btn_done = Button(ax_done, 'Done!')
 		btn_done.on_clicked(lambda evt: plt.close(fig))
-			
+
+		ax_ab = fig.add_axes([0.76, 0.15, 0.10, 0.08])
+		btn_ab = Button(ax_ab, 'A->B')
+
+		def _shift_ab_clicked(evt):
+			dx, dy = ab_shift_vector(lat_params, motif, extra_pars, ('A_1', 'B_1'))
+			for sl, d in ((s_shx, dx), (s_shy, dy)):
+				v = sl.val + d
+				if v < sl.valmin or v > sl.valmax:      # widen the slider on the fly
+					sl.valmin, sl.valmax = min(sl.valmin, v), max(sl.valmax, v)
+					sl.ax.set_xlim(sl.valmin, sl.valmax)
+				sl.set_val(v)
+		btn_ab.on_clicked(_shift_ab_clicked)
+
 		plt.show()
 		print('Params',lat_params)
 
