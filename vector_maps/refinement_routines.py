@@ -481,6 +481,10 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		ax_reset = fig.add_axes([0.87, 0.25, 0.08, 0.08])
 		btn = Button(ax_reset, 'Reset')
 		btn.on_clicked(lambda evt: (s_a.reset(), s_b.reset(), s_r.reset(), s_shx.reset(), s_shy.reset(), s_g.reset()))
+
+		ax_done = fig.add_axes([0.87, 0.15, 0.08, 0.08])
+		btn_done = Button(ax_done, 'Done!')
+		btn_done.on_clicked(lambda evt: plt.close(fig))
 			
 		plt.show()
 		print('Params',lat_params)
