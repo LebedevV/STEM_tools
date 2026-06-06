@@ -45,7 +45,6 @@ COPY LICENSE ./
 COPY abTEM_simulations/pyproject.toml ./
 COPY abTEM_simulations/README.md ./
 COPY abTEM_simulations/abtem_run ./abtem_run
-COPY abTEM_simulations/legacy ./legacy
 
 # Install with the gpu-cu13 extra — cupy-cuda13x + dask-cuda. abtem~=1.0.9
 # is pinned here because pyproject leaves it unconstrained (see header). The
