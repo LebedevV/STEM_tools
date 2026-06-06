@@ -1,9 +1,10 @@
 #!/usr/bin/env python3.11
 # -*- coding: utf-8 -*-
-# Seed a lattice fit from the image FFT: match the first-order Bragg peaks to the
-# abg/phi prediction and refine. Rotation (phi) is the primary target; a,b,gamma
-# are refined too in prefit mode. The actual fit stays in direct space
-# (refinement_run) -- this only produces a better starting lat.
+# Seed a lattice fit from the image FFT. The frame rotation phi is found guess-free
+# (a -90..90 deg sweep that lands the predicted a*, b*, a*+b* on significant peaks);
+# the first-order peaks are then snapped and the reciprocal basis refined. a,b,gamma
+# come along in prefit mode. The actual fit stays in direct space (refinement_run) --
+# this only produces a better starting lat.
 #
 # Geometry is done in nm / nm^-1 via the diffpy.structure metric; calib (nm/px) is
 # the only pixel-facing scale, applied at the FFT-peak boundary.
@@ -18,6 +19,7 @@ import numpy as np
 from diffpy.structure import Lattice
 
 _ORDERS = np.array([(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1)], dtype=float)
+_FIRST = np.array([(1, 0), (0, 1), (1, 1)], dtype=float)      # a*, b*, a*+b* (negatives symmetric)
 
 
 def _rot(phi_deg):
@@ -93,19 +95,51 @@ def _lat_from_recip_nm(recip, lat_params, refine_abg):
 	return out
 
 
-def fft_prefit(image, lat_params, calib, refine_abg=False, sub_area=None, search_frac=0.3):
-	"""Seed lat_params from the image FFT by matching the 6 first-order Bragg peaks
-	to the abg/phi prediction and refining the reciprocal basis.
+def _find_phi(mag, abg, calib, H, W, step):
+	"""Guess-free coarse phi: sweep -90..90 deg and keep the angle whose predicted
+	a*, b*, a*+b* (and their negatives) sit on significant FFT peaks within a px
+	margin. a,b,gamma set the |g| radii; phi is read from the data, not the input."""
+	cx, cy = W / 2.0, H / 2.0
+	bg = np.median(mag)
+	g0 = _FIRST @ _recip_basis_nm({'abg': abg, 'base': [0.0, 0.0, 0.0]}).T      # (3,2) nm^-1
+	rpx = np.hypot(g0[:, 0] * calib * W, g0[:, 1] * calib * H)                  # peak radii (px)
+	margin = max(3.0, 0.5 * np.radians(step) * rpx.max())
 
-	refine_abg=False ("align"): refine the frame rotation phi only.
+	def score(phi):
+		pred = (_FIRST @ _recip_basis_nm({'abg': abg, 'base': [0.0, 0.0, phi]}).T) * calib
+		s = 0.0
+		for fx, fy in pred:
+			for sgn in (1.0, -1.0):
+				pr, pc = cy + sgn * fy * H, cx + sgn * fx * W
+				a, b = max(0, int(pr - margin)), min(H, int(pr + margin) + 1)
+				c, d = max(0, int(pc - margin)), min(W, int(pc + margin) + 1)
+				if b > a and d > c:
+					pk = mag[a:b, c:d].max()
+					if pk > 5 * bg:                    # significant peak present
+						s += pk
+		return s
+
+	phis = np.arange(-90.0, 90.0, step)
+	return float(phis[int(np.argmax([score(p) for p in phis]))])
+
+
+def fft_prefit(image, lat_params, calib, refine_abg=False, sub_area=None, search_frac=0.3, phi_step=5.0):
+	"""Seed lat_params from the image FFT. phi is found guess-free (a -90..90 deg
+	sweep landing the predicted a*, b*, a*+b* on significant peaks); the 6 first-order
+	peaks are then snapped and the reciprocal basis least-squares-fit.
+
+	refine_abg=False ("align"): set the frame rotation phi only.
 	refine_abg=True  ("prefit"): also refine a, b, gamma.
 	Geometry in nm/nm^-1 (diffpy metric); calib (nm/px, isotropic -- see top MEMO
 	for non-square) maps to FFT bins. Returns an updated lat_params; the actual fit
 	stays in direct space.
 	"""
-	recip_nm = _recip_basis_nm(lat_params)                # columns a*, b* (nm^-1, oriented)
 	mag, H, W = _fft_mag(image, sub_area)
 	cx, cy = W / 2.0, H / 2.0
+
+	phi0 = _find_phi(mag, lat_params['abg'], calib, H, W, phi_step)      # guess-free orientation
+	seed = {'abg': lat_params['abg'], 'base': [lat_params['base'][0], lat_params['base'][1], phi0]}
+	recip_nm = _recip_basis_nm(seed)                      # columns a*, b* (nm^-1, oriented)
 
 	pred = (_ORDERS @ recip_nm.T) * calib                 # (6,2) cycles/px (fx, fy)
 	radius = max(2.0, search_frac * np.hypot(pred[:, 0] * W, pred[:, 1] * H).min())

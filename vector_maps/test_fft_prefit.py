@@ -72,6 +72,16 @@ def test_prefit_recovers_oblique_gamma():
 	assert _phi_err(out["base"][2], PHI) < 1.0
 
 
+def test_finds_phi_without_guess():
+	# phi is read from the FFT (a -90..90 sweep), not refined from the input -- plant it
+	# far from the seed (base phi=0) and across the +-90 range, including negative
+	for planted in (-45.0, 30.0, 70.0):
+		img = _synth(A, B, GAMMA, planted, CALIB)
+		lat = {"abg": [A, B, GAMMA], "base": [0.0, 0.0, 0.0],
+		       "fit_abg": [True] * 3, "fit_base": [True] * 3}
+		assert _phi_err(fft_prefit(img, lat, CALIB)["base"][2], planted) < 1.5
+
+
 def test_fit_flags_preserved():
 	img = _synth(A, B, GAMMA, PHI, CALIB)
 	lat = {"abg": [A, B, GAMMA], "base": [0.0, 0.0, PHI - 4.0],
