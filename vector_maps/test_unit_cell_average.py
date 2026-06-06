@@ -68,6 +68,21 @@ def test_degenerate_lattice_raises():
 	raise AssertionError("expected ValueError for colinear a, b")
 
 
+def test_raw_rejects_shape():
+	try:
+		average_unit_cell(_synth(A, B, ORIG), A, B, ORIG, method="raw", shape=(10, 10))
+	except ValueError:
+		return
+	raise AssertionError("raw should reject a custom shape (resample-only)")
+
+
+def test_sub_area_restricts_to_roi():
+	img = _synth(A, B, ORIG)
+	full = average_unit_cell(img, A, B, ORIG)[2].sum()
+	roi = average_unit_cell(img, A, B, ORIG, sub_area=[60, 140, 60, 140])[2].sum()
+	assert 0 < roi < full                              # ROI folds strictly fewer cells
+
+
 if __name__ == "__main__":
 	for _name, _fn in sorted(globals().items()):
 		if _name.startswith("test_") and callable(_fn):
