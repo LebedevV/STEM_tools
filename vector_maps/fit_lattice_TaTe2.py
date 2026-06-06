@@ -21,7 +21,7 @@ extra_pars = {}
 CALIB = 5/266  # nm/pixel; override with --calib or a <fname>_frame.txt sidecar
 
 
-def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False):
+def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False, shift_ab=None):
 	# two prefits on a small ROI, motif fixed
 	_, vec = refinement_run(folder, None, fname, calib, lat_params, motif,
 				show_initial_spots=preview, vec_scale=0.01, sub_area=[1, 3, 1, 3], max_dist=0.15)
@@ -39,7 +39,7 @@ def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False):
 	mo['B_1']['fit'] = [True, True]
 	mo['B_2']['fit'] = [True, True]
 	meta, vec = refinement_run(folder, 'free', fname, calib, lp, mo,
-				show_initial_spots=preview, vec_scale=0.25, sub_area=[0.5, 4.5, 0.5, 4.5], max_dist=0.15)
+				show_initial_spots=preview, vec_scale=0.25, sub_area=[0.5, 4.5, 0.5, 4.5], max_dist=0.15, shift_ab=shift_ab)
 	lp, mo, ep = unpack_to_dicts(vec, lat_params, motif, extra_pars)
 	if unit_cell:
 		from unit_cell_average import unit_cell_average_to_tiffs
@@ -56,7 +56,10 @@ if __name__ == "__main__":
 	p.add_argument("--preview", action="store_true")
 	p.add_argument("--unit-cell", dest="unit_cell", action="store_true",
 		       help="after the fit, write <fname>_uc_{mean,std,count}.tif")
+	p.add_argument("--shift-ab", dest="shift_ab", action="store_true",
+		       help="re-reference the origin A_1->B_1 before the final fit")
 	args = p.parse_args()
 	folder = os.path.join(args.folder, "")
 	calib = args.calib if args.calib is not None else read_frame_calib(folder, args.fname, fallback=CALIB)
-	run_fit_pipeline(folder, args.fname, calib, preview=args.preview, unit_cell=args.unit_cell)
+	run_fit_pipeline(folder, args.fname, calib, preview=args.preview, unit_cell=args.unit_cell,
+			 shift_ab=('A_1', 'B_1') if args.shift_ab else None)
