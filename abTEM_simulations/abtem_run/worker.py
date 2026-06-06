@@ -312,12 +312,15 @@ def run_one_seed(job_dir, todo_path) -> None:
 				cpu.to_tiff(str(out_dir / f"seed_{seed:06d}_{det_name}.tif"))
 				cpu.to_zarr(str(out_dir / f"seed_{seed:06d}_{det_name}.zarr"), overwrite=True)
 
-		# 9) Mark this seed done. Atomic rename so concurrent readers
-		#    (e.g. the aggregator polling for completion) see a coherent state.
-		done_path = todo_path.with_suffix(".done")
-		todo_path.rename(done_path)
 	finally:
 		restore_handlers()
+
+	# 9) Mark this seed done — only after the handlers are restored, so a late
+	#    SIGTERM can't clean the finished outputs once the .todo is already
+	#    .done (deleting a complete, now-unreclaimable seed). Atomic rename
+	#    keeps a polling aggregator's view coherent.
+	done_path = todo_path.with_suffix(".done")
+	todo_path.rename(done_path)
 
 
 def main():
