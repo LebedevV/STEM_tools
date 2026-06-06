@@ -171,3 +171,87 @@ def average_unit_cell_from_fit(image, lat_params, calib, **kwargs):
 	"""
 	a_px, b_px, origin_px = lattice_px_from_fit(lat_params, calib)
 	return average_unit_cell(image, a_px, b_px, origin_px, **kwargs)
+
+
+def _strip_tif(path):
+	for ext in (".tiff", ".tif"):
+		if path.lower().endswith(ext):
+			return path[:-len(ext)]
+	return path
+
+
+def unit_cell_average_to_tiffs(image_path, lat_params, calib, out_stem=None, **kwargs):
+	"""Read image_path, fold via a fit's lattice, write <stem>_uc_{mean,std,count}.tif.
+
+	Convenience for a driver's post-fit step: pass the refined lat_params + calib.
+	"""
+	import cv2
+	img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+	if img is None:
+		raise FileNotFoundError(image_path)
+	mean, std, count = average_unit_cell_from_fit(img, lat_params, calib, **kwargs)
+	stem = out_stem if out_stem is not None else _strip_tif(image_path)
+	for nm, arr in (("mean", mean), ("std", std), ("count", count)):
+		cv2.imwrite(f"{stem}_uc_{nm}.tif", np.asarray(arr, dtype=np.float32))
+	return mean, std, count
+
+
+# ---- CLI: eat a tiff (image or atomap residual) -> mean / std / count tiffs ----
+
+def _xy(s):
+	parts = [float(t) for t in s.split(",")]
+	if len(parts) != 2:
+		raise ValueError(f"expected 'x,y', got {s!r}")
+	return parts
+
+
+def _read_fit_lattice(path):
+	import pandas as pd
+	df = pd.read_csv(path, sep=None, engine="python", index_col=0)
+	cols = list(df.columns)[:3]
+	return {"abg": [float(df.loc["abg", c]) for c in cols],
+		"base": [float(df.loc["base", c]) for c in cols]}
+
+
+def main(argv=None):
+	import argparse
+	import cv2
+	p = argparse.ArgumentParser(description="average a periodic lattice tiff onto one unit cell")
+	p.add_argument("tiff")
+	p.add_argument("--a", type=_xy, help="a vector 'dx,dy' in px")
+	p.add_argument("--b", type=_xy, help="b vector 'dx,dy' in px")
+	p.add_argument("--origin", type=_xy, help="lattice origin 'x0,y0' in px")
+	p.add_argument("--from-fit", dest="from_fit", help="fit lattice.csv (abg/base rows)")
+	p.add_argument("--calib", type=float, help="nm/pixel, with --from-fit")
+	p.add_argument("--shape", type=lambda s: [int(t) for t in s.split(",")], help="N,M output grid")
+	p.add_argument("--method", choices=("resample", "raw"), default="resample")
+	p.add_argument("--no-full-cells", dest="full_cells", action="store_false")
+	p.add_argument("-o", "--out", help="output prefix (default: input path minus .tif)")
+	args = p.parse_args(argv)
+
+	img = cv2.imread(args.tiff, cv2.IMREAD_UNCHANGED)
+	if img is None:
+		raise SystemExit(f"could not read {args.tiff}")
+
+	if args.from_fit:
+		if args.calib is None:
+			raise SystemExit("--from-fit needs --calib")
+		a_px, b_px, origin_px = lattice_px_from_fit(_read_fit_lattice(args.from_fit), args.calib)
+	elif args.a and args.b and args.origin:
+		a_px, b_px, origin_px = args.a, args.b, args.origin
+	else:
+		raise SystemExit("give --from-fit LATTICE.csv --calib X, or --a --b --origin (px)")
+
+	mean, std, count = average_unit_cell(img, a_px, b_px, origin_px, shape=args.shape,
+					     full_cells_only=args.full_cells, method=args.method)
+
+	stem = args.out if args.out is not None else _strip_tif(args.tiff)
+	for name, arr in (("mean", mean), ("std", std), ("count", count)):
+		out = f"{stem}_uc_{name}.tif"
+		cv2.imwrite(out, arr.astype(np.float32))
+		print(f"  wrote {out}")
+	print(f"cell {mean.shape}, cells averaged ~{int(np.nanmax(count))}, method={args.method}")
+
+
+if __name__ == "__main__":
+	main()
