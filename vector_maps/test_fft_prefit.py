@@ -59,6 +59,19 @@ def test_prefit_refines_abg():
 	assert _phi_err(out["base"][2], PHI) < 1.0
 
 
+def test_prefit_recovers_oblique_gamma():
+	# gamma=90 is the one value where a metric/sign error hides; plant an oblique cell
+	g = 75.0
+	img = _synth(A, B, g, PHI, CALIB)
+	lat = {"abg": [A * 1.03, B * 0.97, g + 3.0], "base": [0.0, 0.0, PHI - 4.0],
+	       "fit_abg": [True] * 3, "fit_base": [True] * 3}
+	out = fft_prefit(img, lat, CALIB, refine_abg=True)
+	assert abs(out["abg"][0] - A) / A < 0.03
+	assert abs(out["abg"][1] - B) / B < 0.03
+	assert abs(out["abg"][2] - g) < 2.0
+	assert _phi_err(out["base"][2], PHI) < 1.0
+
+
 def test_fit_flags_preserved():
 	img = _synth(A, B, GAMMA, PHI, CALIB)
 	lat = {"abg": [A, B, GAMMA], "base": [0.0, 0.0, PHI - 4.0],
