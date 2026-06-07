@@ -91,6 +91,28 @@ def test_raw_native_pixel_footprint():
 	assert np.isnan(rm).any()
 
 
+def test_uc_figure_smoke():
+	# the combined schematic | mean | std figure renders to a PNG without error
+	try:
+		import matplotlib
+		matplotlib.use("Agg")
+	except ImportError:
+		return
+	import os
+	import tempfile
+	from unit_cell_average import _uc_figure
+	mean, std, _ = average_unit_cell(_synth(A, B, ORIG), A, B, ORIG, method="raw")
+	lat = {"abg": [0.40, 0.50, 100.0], "base": [0.0, 0.0, 12.0]}
+	motif = {
+		"A_1": {"atom": "Ta", "coord": (0.0, 0.0), "use": True},
+		"B_1": {"atom": "Te", "coord": (0.0, 0.30), "use": True},
+	}
+	out = os.path.join(tempfile.gettempdir(), "uc_fig_smoke.png")
+	_uc_figure(out, lat, 0.02, motif, mean, std)
+	assert os.path.getsize(out) > 0
+	os.remove(out)
+
+
 if __name__ == "__main__":
 	for _name, _fn in sorted(globals().items()):
 		if _name.startswith("test_") and callable(_fn):

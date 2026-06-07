@@ -214,17 +214,62 @@ def _strip_tif(path):
 	return path
 
 
-def unit_cell_average_to_tiffs(image_path, lat_params, calib, out_stem=None, **kwargs):
-	"""Read image_path, fold via a fit's lattice, write <stem>_uc_{mean,std,count}.tif.
+def _draw_cell_schematic(ax, lat_params, calib, motif):
+	"""Unit-cell parallelogram with the a-axis horizontal (phi removed) and the motif
+	atoms at their fractional positions, coloured per element; legend bottom-left."""
+	lat0 = dict(lat_params)
+	lat0["base"] = [0.0, 0.0, 0.0]                                   # a horizontal, b at gamma (no frame rotation)
+	a_px, b_px, _ = lattice_px_from_fit(lat0, calib)
+	a, b = np.asarray(a_px, float), np.asarray(b_px, float)
+	box = np.array([[0, 0], a, a + b, b, [0, 0]])
+	ax.plot(box[:, 0], box[:, 1], "k-", lw=1.5)
+	atoms = [(m["atom"], np.asarray(m["coord"], float)) for m in motif.values() if m.get("use", True)]
+	for i, el in enumerate(dict.fromkeys(e for e, _ in atoms)):       # unique elements, in order
+		xy = np.array([u * a + v * b for e, (u, v) in atoms if e == el])
+		ax.scatter(xy[:, 0], xy[:, 1], s=140, color=f"C{i}", edgecolors="k", linewidths=1.2, label=el, zorder=3)
+	ax.set_aspect("equal", adjustable="datalim")                    # full-slot box so panels align (titles + middles)
+	ax.axis("off")
+	ax.legend(loc="center right", bbox_to_anchor=(0.0, 0.5), frameon=False)   # right edge at the plot's left, at cell level
 
-	Convenience for a driver's post-fit step: pass the refined lat_params + calib.
+
+def _uc_figure(out_path, lat_params, calib, motif, mean, std):
+	"""Combined PNG: [unit-cell schematic | mean | std], all with the a-axis horizontal
+	(the raw maps are rotated by phi to match the schematic). TIFFs stay un-rotated."""
+	import matplotlib.pyplot as plt
+	import scipy.ndimage as ndi
+	phi = lat_params["base"][2]
+	fig, ax = plt.subplots(1, 3, figsize=(12, 4))
+	ty = 0.75                                                            # titles low, near the centred cells
+	_draw_cell_schematic(ax[0], lat_params, calib, motif)
+	ax[0].set_title("unit cell", y=ty)
+	for axi, arr, title, cmap in ((ax[1], mean, "mean", "gray"), (ax[2], std, "std", "viridis")):
+		up = ndi.zoom(arr, 8, order=1)                                    # aggressively upsample before rotating
+		rot = ndi.rotate(up, -phi, reshape=True, order=1, cval=np.nan)    # undo phi -> a horizontal
+		axi.imshow(rot, origin="lower", cmap=cmap)                        # no colorbar: scale is relative
+		axi.set_aspect("equal", adjustable="datalim")                    # full-slot box so panels align
+		axi.axis("off")
+		axi.set_title(title, y=ty)
+	fig.subplots_adjust(wspace=0.05)                                     # tight gap between the panels
+	fig.savefig(out_path, dpi=150, bbox_inches="tight")
+	plt.close(fig)
+
+
+def unit_cell_average_to_tiffs(image_path, lat_params, calib, motif=None, out_stem=None, **kwargs):
+	"""Read image_path, fold via a fit's lattice, write <stem>_uc_{mean,std,count}.tif.
+	With motif given, also write <stem>_uc_figure.png (cell schematic | mean | std,
+	in one orientation, element legend bottom-left).
+
+	Convenience for a driver's post-fit step: pass the refined lat_params + motif + calib.
 	"""
 	import cv2
 	img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
 	if img is None:
 		raise FileNotFoundError(image_path)
+	kwargs.setdefault("method", "raw")           # real-cell footprint, sharing the schematic's orientation
 	mean, std, count = average_unit_cell_from_fit(img, lat_params, calib, **kwargs)
 	stem = out_stem if out_stem is not None else _strip_tif(image_path)
 	for nm, arr in (("mean", mean), ("std", std), ("count", count)):
 		cv2.imwrite(f"{stem}_uc_{nm}.tif", np.asarray(arr, dtype=np.float32))
+	if motif is not None:
+		_uc_figure(f"{stem}_uc_figure.png", lat_params, calib, motif, mean, std)
 	return mean, std, count
