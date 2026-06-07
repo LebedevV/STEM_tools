@@ -64,7 +64,7 @@ def run_fit_pipeline(folder, fname, calib, preview=False, dataset_fname=None, un
 
 	if unit_cell:
 		from unit_cell_average import unit_cell_average_to_tiffs
-		unit_cell_average_to_tiffs(folder + fname + ".tif", lat_params_prefit, calib)
+		unit_cell_average_to_tiffs(folder + fname + ".tif", lat_params_prefit, calib, motif_prefit)
 
 	return metadata
 

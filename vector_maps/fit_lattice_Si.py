@@ -94,10 +94,10 @@ def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False, shift
 	#central area refinement
 	meta,lat_params_vec = refinement_run(folder,fname+'_fix_motif_center',fname,calib,lat_params,motif,extra_pars=extra_pars_prefit,
 						show_initial_spots=preview,vec_scale=0.1,sub_area=[2,12,2,12],max_dist=0.1,shift_ab=shift_ab)
-	lp, _, _ = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
+	lp, mo, _ = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
 	if unit_cell:
 		from unit_cell_average import unit_cell_average_to_tiffs
-		unit_cell_average_to_tiffs(folder + fname + ".tif", lp, calib)
+		unit_cell_average_to_tiffs(folder + fname + ".tif", lp, calib, mo)
 	return meta
 
 
