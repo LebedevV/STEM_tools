@@ -16,6 +16,7 @@ import cv2
 from routines import *
 from plot_routines import *
 from dicts_handling import *
+from flyback_correct import flyback_warp
 
 from matplotlib.widgets import Slider, Button
 
@@ -89,8 +90,12 @@ def get_coords_from_ij(ij,param_vec,max_lim,lat_params, motif_r, extra_pars,crop
 	lat = np.stack((fin_lat_x,fin_lat_y), axis = -1)
 	
 	#shift the set
-	lat = lat + (shx,shy)	
-			
+	lat = lat + (shx,shy)
+
+	#flyback compression: warp the final image-x (exp_a, exp_b in extra_pars; no-op if absent)
+	if 'exp_a' in extr:
+		lat[:,0] = flyback_warp(lat[:,0], extr['exp_a'][0], extr['exp_b'][0])
+
 	if crop:
 		###!TODO minlim
 
