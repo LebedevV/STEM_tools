@@ -10,7 +10,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from flyback_correct import flyback_warp, slow_axis_warp
+from routines import flyback_warp, slow_axis_warp
 
 
 def test_warp_identity_when_zero_amplitude():

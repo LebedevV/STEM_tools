@@ -16,7 +16,6 @@ import cv2
 from routines import *
 from plot_routines import *
 from dicts_handling import *
-from flyback_correct import flyback_warp, slow_axis_warp
 
 from matplotlib.widgets import Slider, Button
 
