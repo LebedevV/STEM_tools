@@ -63,7 +63,7 @@ def hyperspy_to_sidpy(s, title=None):
         else:
             vals = ax.scale * np.arange(ax.size) + ax.offset
         if vals.size != size:
-                    vals = np.arange(size) * scale + offset
+            vals = np.arange(size) * ax.scale + ax.offset
         print(ax.units)
         dim = sidpy.Dimension(vals, name=name, units=units)
         ds.set_dimension(i, dim)
