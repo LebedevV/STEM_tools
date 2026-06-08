@@ -1,3 +1,5 @@
+#License: MIT
+
 import os
 import numpy as np
 import hyperspy.api as hs
