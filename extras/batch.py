@@ -3,21 +3,10 @@
 import os
 import numpy as np
 import hyperspy.api as hs
-import atomap.api as am
-import atomap.initial_position_finding as ipf
-from scipy.spatial.transform import Rotation as R
-import matplotlib.pyplot as plt
-import scipy
 import tifffile
 
 import sidpy
-import pyTEMlib
-
-import pyTEMlib.file_tools
-import pyTEMlib.image_tools 
-import pyTEMlib.probe_tools
-import pyTEMlib.atom_tools
-
+import pyTEMlib.image_tools
 from sidpy.sid.dimension import DimensionType
 
 def hyperspy_to_sidpy(s, title=None):
@@ -61,7 +50,6 @@ def hyperspy_to_sidpy(s, title=None):
             vals = ax.scale * np.arange(ax.size) + ax.offset
         if vals.size != size:
             vals = np.arange(size) * ax.scale + ax.offset
-        print(ax.units)
         dim = sidpy.Dimension(vals, name=name, units=units)
         ds.set_dimension(i, dim)
 
@@ -106,16 +94,17 @@ def alignment(s,folder,fname,NRA=False,bin_factor=1):
         tifffile.imwrite(folder+fname+"_NRA.tiff", nonrigid_registered.mean(axis=0).compute().astype(np.float32))
         
         
-folder = '/path/to/folder'
-ff = os.listdir(folder)
-ending = '.dm3'
-ff = [i[:-4] for i in ff if i.endswith(ending) ]#or dm4, or emd
+if __name__ == '__main__':
+    folder = '/path/to/folder'
+    ff = os.listdir(folder)
+    ending = '.dm3'
+    ff = [i[:-4] for i in ff if i.endswith(ending) ]#or dm4, or emd
 
-for fname in ff:
-    s = hs.load(folder+fname+ending,lazy=True)
-    if len(s.data.shape)>2:
-        print(fname)
-        try:
-            alignment(s,folder,fname,NRA=False,bin_factor=1)
-        except:
-            print('failed')
+    for fname in ff:
+        s = hs.load(folder+fname+ending,lazy=True)
+        if len(s.data.shape)>2:
+            print(fname)
+            try:
+                alignment(s,folder,fname,NRA=False,bin_factor=1)
+            except:
+                print('failed')
