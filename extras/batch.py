@@ -8,7 +8,6 @@ import atomap.initial_position_finding as ipf
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 import scipy
-#import scipy.ndimage
 import tifffile
 
 import sidpy
@@ -19,8 +18,6 @@ import pyTEMlib.image_tools
 import pyTEMlib.probe_tools
 import pyTEMlib.atom_tools
 
-import numpy as np
-import sidpy
 from sidpy.sid.dimension import DimensionType
 
 def hyperspy_to_sidpy(s, title=None):
