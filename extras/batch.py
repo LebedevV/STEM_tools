@@ -95,7 +95,7 @@ def alignment(s,folder,fname,NRA=False,bin_factor=1):
         
         
 if __name__ == '__main__':
-    folder = '/path/to/folder'
+    folder = '/path/to/folder/'
     ff = os.listdir(folder)
     ending = '.dm3'
     ff = [i[:-4] for i in ff if i.endswith(ending) ]#or dm4, or emd
@@ -106,5 +106,5 @@ if __name__ == '__main__':
             print(fname)
             try:
                 alignment(s,folder,fname,NRA=False,bin_factor=1)
-            except:
+            except Exception:
                 print('failed')
