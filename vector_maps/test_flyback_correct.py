@@ -10,7 +10,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from flyback_correct import flyback_warp
+from flyback_correct import flyback_warp, slow_axis_warp
 
 
 def test_warp_identity_when_zero_amplitude():
@@ -42,6 +42,24 @@ def test_extra_pars_unpack_feeds_warp():
 	assert extr["exp_a"][0] == 0.12 and extr["exp_b"][0] == 1.7
 	x = np.linspace(0.0, 5.0, 20)
 	assert np.allclose(flyback_warp(x, extr["exp_a"][0], extr["exp_b"][0]), x + 0.12 * np.exp(-x / 1.7))
+
+
+def test_slow_axis_warp_quad_cubic():
+	y = np.linspace(0.0, 16.0, 40)
+	x = np.zeros_like(y)
+	xx, yy = slow_axis_warp(x, y, {"sx2": (0.01, True), "sy3": (0.001, True)})
+	assert np.allclose(xx, 0.01 * y ** 2)
+	assert np.allclose(yy, y + 0.001 * y ** 3)
+
+
+def test_slow_axis_warp_linear_applied_const_and_absent_noop():
+	y = np.linspace(0.0, 16.0, 10)
+	x = np.ones_like(y)
+	xx, _ = slow_axis_warp(x, y, {"sx1": (0.5, True)})        # linear is supported
+	assert np.allclose(xx, x + 0.5 * y)
+	# constant (sx0, left to the lattice origin) and unrelated keys are ignored -> identity
+	xx2, yy2 = slow_axis_warp(x, y, {"exp_a": (0.1, True), "sx0": (9.0, True)})
+	assert np.allclose(xx2, x) and np.allclose(yy2, y)
 
 
 if __name__ == "__main__":
