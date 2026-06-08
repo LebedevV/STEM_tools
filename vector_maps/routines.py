@@ -402,3 +402,24 @@ def plot_output_page_diff(fname,folder):
 	plt.close('all')
 	#plt.show()
 
+
+# --- scan-distortion model terms applied by get_coords_from_ij ---
+# Flyback hysteresis (Mullarkey et al., Microsc. Microanal. 28, 2022): short scan-line
+# flyback compresses the line start, modelled as an exponential displacement along the
+# fast axis (image-x, nm). exp_a/exp_b and the slow-axis sx<k>/sy<k> are fit as extra_pars.
+def flyback_warp(x, exp_a, exp_b):
+	"""Forward flyback map on the fast-scan coordinate x (nm): x + exp_a*exp(-x/exp_b)."""
+	x = np.asarray(x, dtype=float)
+	return x + exp_a * np.exp(-x / exp_b)
+
+
+def slow_axis_warp(x, y, extr):
+	"""Optional low-order slow-axis (y) distortion: add sx<k>*y**k to x and sy<k>*y**k
+	to y for the coeffs (nm) present in extra_pars, k in 1..3. No-op if none set.
+	The linear term (sx1/sy1) is degenerate with the lattice shear/scale, so enable it
+	only with the lattice pinned (the two-stage centre->edge workflow); the constant is
+	left to the lattice origin (shx/shy)."""
+	dx = sum(extr[f"sx{k}"][0] * y ** k for k in (1, 2, 3) if f"sx{k}" in extr)
+	dy = sum(extr[f"sy{k}"][0] * y ** k for k in (1, 2, 3) if f"sy{k}" in extr)
+	return x + dx, y + dy
+

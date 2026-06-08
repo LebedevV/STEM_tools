@@ -89,8 +89,16 @@ def get_coords_from_ij(ij,param_vec,max_lim,lat_params, motif_r, extra_pars,crop
 	lat = np.stack((fin_lat_x,fin_lat_y), axis = -1)
 	
 	#shift the set
-	lat = lat + (shx,shy)	
-			
+	lat = lat + (shx,shy)
+
+	#flyback compression: warp the final image-x (exp_a, exp_b in extra_pars; no-op if absent)
+	if 'exp_a' in extr and 'exp_b' in extr:
+		lat[:,0] = flyback_warp(lat[:,0], extr['exp_a'][0], extr['exp_b'][0])
+
+	#optional low-order slow-axis (y) distortion (sx1..sx3/sy1..sy3 in extra_pars; no-op if absent)
+	if any(f's{a}{k}' in extr for a in 'xy' for k in (1,2,3)):
+		lat[:,0], lat[:,1] = slow_axis_warp(lat[:,0], lat[:,1], extr)
+
 	if crop:
 		###!TODO minlim
 
