@@ -19,7 +19,7 @@ Two entry points:
   abtem-run-to-ensemble <job_dir> [--channel CH ...] [--out PATH]
       CLI. For each channel (auto-discovered if not specified), reads
       every ``seed_*_<channel>.zarr`` from outputs/ ∪ outputs_archive/
-      and writes ``aggregate/<channel>_ensemble.zarr`` carrying the
+      and writes ``<vdir>/ensemble/<channel>_ensemble.zarr`` carrying the
       full N-snapshot stack with proper FrozenPhononsAxis metadata.
       Round-trip safe: ``abtem.from_zarr`` on the result restores the
       ensemble axis, and ``.reduce_ensemble()`` averages back to the
@@ -31,7 +31,7 @@ Two entry points:
 
 The ``FrozenPhononsAxis`` carries ``_ensemble_mean=True`` so abtem's
 ``.reduce_ensemble()`` does the thermal average automatically. The
-result mathematically matches ``aggregate/<channel>.zarr`` (the
+result mathematically matches ``<vdir>/scans/<channel>.zarr`` (the
 filesystem-glob mean) to floating-point precision — verified by the
 ``test_to_ensemble_reduce_matches_aggregate`` test.
 
@@ -108,7 +108,7 @@ def load_ensemble(job_dir, channel: str):
 	Note:
 		``.reduce_ensemble()`` on the returned object produces the
 		thermal average — same value as the regular aggregator writes
-		to ``aggregate/<channel>.zarr``.
+		to ``<vdir>/scans/<channel>.zarr``.
 	"""
 	job_dir = Path(job_dir).resolve()
 	out_dir = job_dir / "outputs"
@@ -157,8 +157,9 @@ def to_ensemble_files(
 		channels: list of channel names to emit. ``None`` (default)
 		          auto-discovers from existing per-seed zarrs.
 		out_dir: where to write the ``*_ensemble.zarr`` files. ``None``
-		         (default) uses ``<job_dir>/aggregate/`` — same place
-		         the regular aggregator writes its outputs.
+		         (default) uses ``<vdir>/ensemble/`` — the aggregate
+		         version dir matching the job's config (rediscovered, or
+		         created if no aggregate has run yet).
 
 	Returns:
 		List of ``(channel, output_zarr_path)`` for channels actually
@@ -174,7 +175,8 @@ def to_ensemble_files(
 		raise FileNotFoundError(f"job_dir does not exist: {job_dir}")
 
 	if out_dir is None:
-		out_dir = job_dir / "aggregate"
+		from .aggregate import version_dir_for
+		out_dir = version_dir_for(job_dir) / "ensemble"
 	else:
 		out_dir = Path(out_dir)
 	out_dir.mkdir(parents=True, exist_ok=True)
@@ -239,7 +241,7 @@ def main():
 	parser.add_argument(
 		"--out",
 		metavar="DIR",
-		help="output directory (default: <job_dir>/aggregate/)",
+		help="output directory (default: the matching aggregate version dir's ensemble/)",
 	)
 	args = parser.parse_args()
 
