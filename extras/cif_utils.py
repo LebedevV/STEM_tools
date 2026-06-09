@@ -1,6 +1,5 @@
 #License: GNU GPL-v3
 
-import pandas as pd
 import diffpy.structure
 import os
 import ase
@@ -165,65 +164,65 @@ def calc_uvw(params,v1,v2):
 	return uvw
 
 
+if __name__ == '__main__':
+	d1,d2,ang=1.82,2.05,90 #in A
 
-d1,d2,ang=1.82,2.05,90 #in A
-
-#Example
-param = get_params('/path/to/cif')
-print(ipl_angle_q(param,[0,0,2],[0,4,2]))
-
-
-#another example - dists only, no angle
-
-all_hkl = gen_list(20)
-param = get_params('/path/to/cif')
-
-tol = 0.1
-d1 = 1.8
-d2 = 2.5
-
-d1_list = filter_d_qq(all_hkl,param,d1,tol)
-d2_list = filter_d_qq(all_hkl,param,d2,tol)
-print(len(d1_list))
-print(len(d2_list))
-
-list_of_norm = []
-for i in d1_list:
-	for j in d2_list:
-		sum_12 = np.array(i)/2 + np.array(j)/2
-		sum_12 = sum_12.tolist()
-		if np.dot(i,j)==0:
-			print(i,j,np.cross(i,j))
-			print(sum_12,ipl_dist_q(param,sum_12), np.dot(sum_12,np.cross(i,j)) )
-			list_of_norm.append(np.cross(i,j))
-print('List of UVWs',list_of_norm)
+	#Example
+	param = get_params('/path/to/cif')
+	print(ipl_angle_q(param,[0,0,2],[0,4,2]))
 
 
-#Full run
-folder = '/path/to/allcifs'
-f = os.listdir(folder)
-full_output = []
-all_hkl = gen_list(20)
+	#another example - dists only, no angle
 
-for i in f:
-	if i.endswith('.cif'):
-		print('Fitting ',i)
-		c = ase.io.read( folder + i )
-		par = c.cell.lengths()
-		ang_lat = c.cell.angles()
-		ff = open(folder + i,'r')
-		dd = ff.readlines()
-		#print(dd[0])
-		ff.close()
-		sg = ''
-		for l in dd:
-			#print(l)
-			if 'space_group_name' in l or 'space_group_name_H' in l:
-				if len(l.split(' ')) > 1:
-					sg = l.split(" ")[1]
-					print(sg)
-		param = [par[0],par[1],par[2],ang_lat[0],ang_lat[1],ang_lat[2]]
-		print(sg)
-		full_output = fit_the_lattice(i,param,sg,all_hkl,d1,d2,ang,full_output=full_output)
-		
-print(full_output)
+	all_hkl = gen_list(20)
+	param = get_params('/path/to/cif')
+
+	tol = 0.1
+	d1 = 1.8
+	d2 = 2.5
+
+	d1_list = filter_d_qq(all_hkl,param,d1,tol)
+	d2_list = filter_d_qq(all_hkl,param,d2,tol)
+	print(len(d1_list))
+	print(len(d2_list))
+
+	list_of_norm = []
+	for i in d1_list:
+		for j in d2_list:
+			sum_12 = np.array(i)/2 + np.array(j)/2
+			sum_12 = sum_12.tolist()
+			if np.dot(i,j)==0:
+				print(i,j,np.cross(i,j))
+				print(sum_12,ipl_dist_q(param,sum_12), np.dot(sum_12,np.cross(i,j)) )
+				list_of_norm.append(np.cross(i,j))
+	print('List of UVWs',list_of_norm)
+
+
+	#Full run
+	folder = '/path/to/allcifs'
+	f = os.listdir(folder)
+	full_output = []
+	all_hkl = gen_list(20)
+
+	for i in f:
+		if i.endswith('.cif'):
+			print('Fitting ',i)
+			c = ase.io.read( folder + i )
+			par = c.cell.lengths()
+			ang_lat = c.cell.angles()
+			ff = open(folder + i,'r')
+			dd = ff.readlines()
+			#print(dd[0])
+			ff.close()
+			sg = ''
+			for l in dd:
+				#print(l)
+				if 'space_group_name' in l or 'space_group_name_H' in l:
+					if len(l.split(' ')) > 1:
+						sg = l.split(" ")[1]
+						print(sg)
+			param = [par[0],par[1],par[2],ang_lat[0],ang_lat[1],ang_lat[2]]
+			print(sg)
+			full_output = fit_the_lattice(i,param,sg,all_hkl,d1,d2,ang,full_output=full_output)
+
+	print(full_output)
