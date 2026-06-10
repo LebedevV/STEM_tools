@@ -23,11 +23,13 @@ CLI:
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
 from ._log import configure_default_logging
 from .aggregate import aggregate_job, aggregate_series
+from .config import load_config
 from .generator_run import generate_run
 from .worker import run_one_seed
 
@@ -44,6 +46,7 @@ def run_pipeline(
 	generate_only: bool = False,
 	resume_dir=None,
 	force_new: bool = False,
+	show_estimate: bool = True,
 ) -> Path:
 	"""Library entry point for the in-process pipeline.
 
@@ -82,6 +85,11 @@ def run_pipeline(
 		raise ValueError("generate_only cannot be combined with resume_dir")
 
 	if resume_dir is None:
+		# Pre-flight cost estimate (logged at INFO; silence with
+		# show_estimate=False or env ABTEM_RUN_NO_ESTIMATE=1).
+		if show_estimate and not os.environ.get("ABTEM_RUN_NO_ESTIMATE"):
+			from ._estimate import estimate_run_cost, format_run_cost
+			log.info(format_run_cost(estimate_run_cost(load_config(config_path))))
 		log.info(f"abtem-run: generating queue from {config_path}")
 		run_dir = generate_run(config_path)
 		log.info(f"abtem-run: queue at {run_dir}")
@@ -193,6 +201,14 @@ def main():
 			"Applies to --aggregate / --aggregate-series and the resume re-aggregate."
 		),
 	)
+	parser.add_argument(
+		"--no-estimate",
+		action="store_true",
+		help=(
+			"suppress the pre-flight cost estimate before the generator runs "
+			"(also suppressed by ABTEM_RUN_NO_ESTIMATE=1). No effect on --resume."
+		),
+	)
 	args = parser.parse_args()
 
 	# Standalone aggregate modes are mutually exclusive with the pipeline
@@ -215,7 +231,7 @@ def main():
 			parser.error("--generate-only cannot be combined with --resume")
 		run_pipeline(resume_dir=args.resume, force_new=args.force_new)
 	else:
-		run_pipeline(args.config, generate_only=args.generate_only, force_new=args.force_new)
+		run_pipeline(args.config, generate_only=args.generate_only, force_new=args.force_new, show_estimate=not args.no_estimate)
 	return 0
 
 
