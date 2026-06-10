@@ -32,12 +32,13 @@ dependencies = [
     "matplotlib",
     "dask",
     # Microscopy / crystallography
-    "abtem",
+    "abtem==1.0.9",  # pinned: the runtime monkey-patches target 1.0.9 source substrings
     "ase",
     "diffpy.structure",
     # Config + IO
     "pydantic>=2",
     "tomli-w",
+    "tifffile",  # abtem.to_tiff backend — worker + aggregator write per-seed .tif unconditionally
     # Validated on zarr-python 2.x (CPU dev box) and 3.2.1 (GPU host, 2026-06-10:
     # full pipeline incl. 64-seed MC ladder). zarr 3 reads v2 stores fine, but
     # WRITES v3-format stores that zarr 2 cannot read back — keep all machines
@@ -47,6 +48,7 @@ dependencies = [
 
 [project.scripts]
 abtem-run = "abtem_run.cli:main"
+abtem-run-generate = "abtem_run.generator_run:main"
 abtem-run-worker = "abtem_run.worker:main"
 abtem-run-aggregate = "abtem_run.aggregate:main"
 abtem-run-to-ensemble = "abtem_run.to_ensemble:main"

@@ -46,10 +46,15 @@ COPY abTEM_simulations/pyproject.toml ./
 COPY abTEM_simulations/README.md ./
 COPY abTEM_simulations/abtem_run ./abtem_run
 
-# Install with the gpu-cu13 extra — cupy-cuda13x + dask-cuda. abtem~=1.0.9
-# is pinned here because pyproject leaves it unconstrained (see header). The
-# pipeline tolerates rmm being absent (gpu_related.dask_cuda gates it).
-RUN python3.11 -m pip install --no-cache-dir "abtem~=1.0.9" ".[gpu-cu13]"
+# Install with the gpu-cu13 extra — cupy-cuda13x + dask-cuda. abtem is pinned
+# to ==1.0.9 in pyproject (the runtime monkey-patches target its source); the
+# pipeline tolerates rmm being absent (gpu_related.dask_cuda gates it, soft-dep).
+RUN python3.11 -m pip install --no-cache-dir ".[gpu-cu13]"
+
+# Build-time gate: fail the build if the abtem monkey-patches did not bind. A
+# drifted abtem would silently no-op (_PATCHES_APPLIED records the miss) and the
+# GPU paths fail only at runtime on a spot node. Imports fine without a GPU.
+RUN python3.11 -c "import abtem_run, sys; sys.exit(0 if all(abtem_run._PATCHES_APPLIED.values()) else 1)"
 
 # /work is the mount point for the per-run job tree (config.toml, CIFs,
 # the gen_<UTC>/ output tree). The console scripts take absolute paths,

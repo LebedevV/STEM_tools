@@ -262,8 +262,28 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
     return run_dir
 
 
-if __name__ == "__main__":
+def main():
+    """``abtem-run-generate`` console-script entry: plan the job tree from a TOML
+    config (no GPU). Writes ``gen_<UTC>/`` with per-seed ``.todo`` files +
+    planning artifacts (surf.xyz, combined.png)."""
+    import argparse
+    import sys
     from ._log import configure_default_logging
     configure_default_logging()
-    d = generate_run(Path("config.toml"))
+    parser = argparse.ArgumentParser(
+        prog="abtem-run-generate",
+        description="Generate the per-seed work queue + planning artifacts from a TOML config.",
+    )
+    parser.add_argument(
+        "config", nargs="?", default="config.toml",
+        help="TOML config file (default: config.toml in CWD)",
+    )
+    args = parser.parse_args()
+    d = generate_run(Path(args.config))
     log.info(f"Generated: {d}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
