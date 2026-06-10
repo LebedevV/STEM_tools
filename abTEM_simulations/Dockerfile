@@ -51,10 +51,25 @@ COPY abTEM_simulations/abtem_run ./abtem_run
 # pipeline tolerates rmm being absent (gpu_related.dask_cuda gates it, soft-dep).
 RUN python3.11 -m pip install --no-cache-dir ".[gpu-cu13]"
 
+# abtem imports numba.cuda at module load; the split-out numba-cuda package needs
+# explicit CUDA bindings unless told to use ctypes. Use ctypes — works on GPU and
+# lets the import succeed without the cuda-bindings package (applies at runtime too).
+ENV NUMBA_CUDA_USE_NVIDIA_BINDING=0
+
 # Build-time gate: fail the build if the abtem monkey-patches did not bind. A
 # drifted abtem would silently no-op (_PATCHES_APPLIED records the miss) and the
 # GPU paths fail only at runtime on a spot node. Imports fine without a GPU.
 RUN python3.11 -c "import abtem_run, sys; sys.exit(0 if all(abtem_run._PATCHES_APPLIED.values()) else 1)"
+
+# Caches default to $HOME; with `docker run --user <uid>` (no matching passwd
+# entry) HOME resolves to '/', which arbitrary users can't write -> cupy / numba /
+# matplotlib fail at startup. Point HOME + caches at world-writable /tmp so the
+# image runs as any UID (the non-root deploy pattern).
+ENV HOME=/tmp \
+    CUPY_CACHE_DIR=/tmp/.cupy \
+    NUMBA_CACHE_DIR=/tmp/.numba \
+    MPLCONFIGDIR=/tmp/.mpl \
+    XDG_CACHE_HOME=/tmp/.cache
 
 # /work is the mount point for the per-run job tree (config.toml, CIFs,
 # the gen_<UTC>/ output tree). The console scripts take absolute paths,
