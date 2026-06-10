@@ -147,3 +147,16 @@ teardown. Two gaps + a pre-existing smell:
       setup are yoked to one flag. The hardcoded `tcp://127.0.0.1:8786` with **no
       connection timeout** also hangs silently if no scheduler is up — give it a
       timeout and a clearer error.
+- [ ] **Device-memory spilling does NOT let abtem exceed VRAM** (tested 2026-06-10,
+      rmm 26.06 present + the soft-dep's rmm branch engaged). With `dask-cuda-worker
+      --device-memory-limit 256MB` (well below the ~0.7 GB potential), a
+      production-grid seed still used **5.5 GB** of GPU and ran in 45 s (vs 37 s
+      single-GPU / 41 s at a 1 GB limit) — the limit had essentially no effect, no
+      spill activity, output bit-identical. Cause: dask-cuda's limit evicts *idle
+      dask-managed* device objects from the worker data store, but abtem's GPU
+      memory is the *active* multislice working set (allocated through cupy/rmm
+      during task execution) + the ~448 MiB graph shipped per submit — neither is
+      spillable idle data. So bigger-than-VRAM jobs are NOT achievable via spilling;
+      the multislice working set must fit physical VRAM. Out-of-core would require
+      chunking the multislice itself, not dask-cuda spilling. (The rmm *allocator*
+      engages and is correct — it's the spilling-to-exceed-VRAM idea that doesn't apply.)
