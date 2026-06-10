@@ -3,7 +3,6 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-# zarr<3 is needed!
 import logging
 from copy import deepcopy
 from dataclasses import dataclass

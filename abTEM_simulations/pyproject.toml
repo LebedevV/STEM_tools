@@ -38,7 +38,11 @@ dependencies = [
     # Config + IO
     "pydantic>=2",
     "tomli-w",
-    "zarr<3",  # abtem's to_zarr output path relies on Zarr v2 behavior
+    # Validated on zarr-python 2.x (CPU dev box) and 3.2.1 (GPU host, 2026-06-10:
+    # full pipeline incl. 64-seed MC ladder). zarr 3 reads v2 stores fine, but
+    # WRITES v3-format stores that zarr 2 cannot read back — keep all machines
+    # sharing one job tree on the same major version.
+    "zarr",
 ]
 
 [project.scripts]
