@@ -13,7 +13,6 @@ Used by ``cli.run_pipeline``; skip with ``--no-estimate`` or
 """
 
 import logging
-import math
 from dataclasses import dataclass
 
 
@@ -65,25 +64,17 @@ class RunCost:
 
 def _estimate_scan_positions(cfg) -> int:
 	"""Scan-grid size matching worker._run_scan: override_sampling if set,
-	else 0.9 × probe.ctf.nyquist_sampling. nyquist computed directly from
-	energy2wavelength (avoids importing abtem here).
+	else 0.9 × abtem's nyquist_sampling, imported (not re-derived) so the scan
+	grid stays a single source of truth shared with the worker.
 	"""
 	sim = cfg.simulations
 	scan_s = cfg.lamella_settings.scan_s
 	if sim.override_sampling and not isinstance(sim.override_sampling, bool):
 		sampling = float(sim.override_sampling)
 	else:
-		# λ [Å] = h / sqrt(2 m_e e V (1 + eV/(2 m_e c²))) × 1e10 (SI constants).
-		h = 6.62607015e-34
-		m_e = 9.1093837015e-31
-		e = 1.602176634e-19
-		c = 299792458.0
-		V = float(cfg.microscope.HT_value)
-		lam_m = h / math.sqrt(2 * m_e * e * V * (1 + e * V / (2 * m_e * c * c)))
-		lam_A = lam_m * 1e10
-		semiangle_rad = float(cfg.microscope.convergence_angle) * 1e-3
-		nyquist = lam_A / (2.0 * semiangle_rad)
-		sampling = nyquist * 0.9
+		from abtem.transfer import nyquist_sampling
+		sampling = 0.9 * nyquist_sampling(
+			float(cfg.microscope.convergence_angle), float(cfg.microscope.HT_value))
 	if sampling <= 0:
 		return 0
 	per_axis = max(1, int(scan_s / sampling))
