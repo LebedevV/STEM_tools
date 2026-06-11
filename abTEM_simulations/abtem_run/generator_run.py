@@ -144,9 +144,37 @@ def _emit_planning_artifacts(cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
     _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir)
 
 
+def _tagval(v) -> str:
+    """Filesystem-friendly stringification of a sweep value (10.0 -> '10')."""
+    if isinstance(v, float):
+        return f"{v:g}"
+    return str(v)
+
+
+def _frame_sweep_tags(frames) -> list[str]:
+    """One stem suffix per frame encoding the non-tilt sweep axes that vary
+    across ``frames`` (empty when none vary). The job-dir stem is
+    ``{phase}_{hkl}_{tilt}``; without this, a sweep over a non-tilt axis
+    (frozen_phonons / fph_sigma / thickness / probability_of_vac / HT_value)
+    would collide on the same stem and silently overwrite the earlier frame's
+    job dir. Single-run and tilt-only sweeps keep their original names."""
+    axes = (
+        ("fp", lambda c: c["simulations"]["frozen_phonons"]),
+        ("fs", lambda c: c["simulations"]["fph_sigma"]),
+        ("th", lambda c: c["lamella_settings"]["thickness"]),
+        ("pv", lambda c: c["lamella_settings"]["probability_of_vac"]),
+        ("ht", lambda c: c["microscope"]["HT_value"]),
+    )
+    dicts = [f.model_dump() for f in frames]
+    varying = [(tag, get) for tag, get in axes if len({_tagval(get(d)) for d in dicts}) > 1]
+    return ["".join(f"_{tag}{_tagval(get(d))}" for tag, get in varying) for d in dicts]
+
+
 def generate_run(config_path: Path = Path("config.toml")) -> Path:
     cfg0 = confread.load_config(config_path)
     frames = list(expand_cfg(cfg0))
+    # Per-frame stem suffix so non-tilt sweep axes don't collide (see helper).
+    sweep_tags = _frame_sweep_tags(frames)
 
     # Output root from TOML
     out_root = Path(cfg0.paths.folder_sim) / cfg0.paths.extr
@@ -186,7 +214,7 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
 
                 # This is the naming analogue of: f"{sg}_{line_hkl}_{ctx.global_tilt}.toml"
                 # We use (phase, line_hkl, tilt) because sg isn't known until CIF is parsed.
-                stem = f"{phase_name}_{line_hkl}_{tilt}"
+                stem = f"{phase_name}_{line_hkl}_{tilt}{sweep_tags[frame_idx]}"
 
                 job_dir = run_dir / stem
                 (job_dir / "seeds").mkdir(parents=True, exist_ok=True)
@@ -234,8 +262,28 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
     return run_dir
 
 
-if __name__ == "__main__":
+def main():
+    """``abtem-run-generate`` console-script entry: plan the job tree from a TOML
+    config (no GPU). Writes ``gen_<UTC>/`` with per-seed ``.todo`` files +
+    planning artifacts (surf.xyz, combined.png)."""
+    import argparse
+    import sys
     from ._log import configure_default_logging
     configure_default_logging()
-    d = generate_run(Path("config.toml"))
+    parser = argparse.ArgumentParser(
+        prog="abtem-run-generate",
+        description="Generate the per-seed work queue + planning artifacts from a TOML config.",
+    )
+    parser.add_argument(
+        "config", nargs="?", default="config.toml",
+        help="TOML config file (default: config.toml in CWD)",
+    )
+    args = parser.parse_args()
+    d = generate_run(Path(args.config))
     log.info(f"Generated: {d}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

@@ -10,20 +10,20 @@ The main benefit of this code is the possibility to deal with non-orthogonal spa
 Trigonal symmentry has not been assessed yet; looking forward to hear any feedback on that! 
 
 Known issues and TODO:
- - (done) move most variables to JSON
- - add a support of variables as lists to iterate over all combinations
+ - (done) move most variables to JSON  (now a validated config.toml)
+ - (done) add a support of variables as lists to iterate over all combinations  (expand_cfg sweeps frozen_phonons / fph_sigma / thickness / global_tilt_a / global_tilt_b / probability_of_vac / HT_value; phase and hkl_to_do also accept lists)
  - (done) fix the issue with random_seed for vacancies generator
- - add a possibility of different types of vacancies simultaneously
- - add a way to import an ase set
- - output file names to reflect was it uvw or hkl
- - first frame is simulated separately from frozen phonons, and this simulation is just repeated later on.
-	maybe add a flag?
- - (done) dry\_run should be implemented as a flag in a full_run
+ - add a possibility of different types of vacancies simultaneously  (still open: one element_to_remove per job)
+ - (partial) add a way to import an ase set  (worker + aggregator read job_dir/surf.xyz, so a hand-placed extxyz is honored when those stages run directly; the generator overwrites it on a full run, and there is no config field for an external path yet)
+ - (partial) output file names to reflect was it uvw or hkl  (captured in combined.png title + run_manifest.json per job; the job-dir / output filenames still don't encode it)
+ - (done) first frame is simulated separately from frozen phonons, and this simulation is just repeated later on.
+	resolved by the worker redesign: every seed shares one code path (static lattice = fph_sigma off + a single seed); the static projection is opt-in via simulations.emit_static_baseline
+ - (done) dry\_run should be implemented as a flag in a full_run  (abtem-run --generate-only)
  - (done) separated lib file to be created
- - gaussian blur is not handling borders correctly
- - BF images to be confirmed
- - for the in-plane rotation to add 'this hkl up' functionality
- - check imported libraries
+ - (done) gaussian blur is not handling borders correctly  (simulations.blur_boundary: nearest | constant | reflect | wrap, threaded into Images.gaussian_filter)
+ - BF images to be confirmed  (add_probe warns on defocus='scherzer' with C30=0; empirical confirmation still pending)
+ - (done) for the in-plane rotation to add 'this hkl up' functionality  (job.inplane_align_hkl + job.inplane_align_axis)
+ - (done) check imported libraries  (no unused imports across the package — ruff --select F is clean apart from one f-string nit; ruff in dev deps)
 
 Install (development):
 

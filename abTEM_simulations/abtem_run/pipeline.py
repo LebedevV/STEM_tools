@@ -3,7 +3,6 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-# zarr<3 is needed!
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
@@ -171,8 +170,11 @@ def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
 	if use_gpu and cfg.gpu_related.dask_cuda:
 		from dask.distributed import Client
 		dask_client = Client("tcp://127.0.0.1:8786")
-		from rmm.allocators.cupy import rmm_cupy_allocator
-		cp.cuda.set_allocator(rmm_cupy_allocator)
+		try:
+			from rmm.allocators.cupy import rmm_cupy_allocator
+			cp.cuda.set_allocator(rmm_cupy_allocator)
+		except ImportError:
+			log.info("rmm not available; using cupy's default memory pool")
 	elif cfg.gpu_related.dask_cuda:
 		log.info('dask_cuda can run only if CUDA is allowed; skipping')
 
