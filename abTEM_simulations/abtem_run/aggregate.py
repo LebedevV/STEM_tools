@@ -7,8 +7,10 @@ __license__ = "GPL-v3"
 Aggregator for the abtem-run worker pipeline.
 
 Reads ``<job_dir>/outputs/seed_*_<channel>.zarr`` (written by the worker),
-computes the mean across seeds for each channel, and writes a single
-aggregate per channel into ``<job_dir>/aggregate/``. The projected-potential
+computes the mean across seeds for each channel, and writes them into a
+versioned, namespaced ``<job_dir>/aggregate/<UTC>_<hash>/{scans,patterns,
+projections}/`` (rediscovered per config hash; force_new starts a fresh dir),
+with a ``seed_counts.json`` provenance sidecar. The projected-potential
 channel (``seed_*_potproj``) means to a phonon-averaged projection preview, so
 it reflects the potentials actually propagated through; setting
 ``simulations.emit_static_baseline`` adds a separate static-lattice projection.
@@ -31,6 +33,9 @@ Library:
     aggregate_job(job_dir)
 """
 import argparse
+import datetime
+import hashlib
+import json
 import logging
 import shutil
 import sys
@@ -69,6 +74,85 @@ def _collect_seed_zarrs(out_dir: Path, archive_dir: Path, channel_name: str) -> 
 	return [collected[k] for k in sorted(collected)]
 
 
+def _load_job_config(job_dir: Path):
+	"""Load the single per-job TOML -> (toml_path, AppConfig). Raises if zero
+	or more than one *.toml is present."""
+	toml_candidates = list(job_dir.glob("*.toml"))
+	if not toml_candidates:
+		raise FileNotFoundError(f"No *.toml in {job_dir}")
+	if len(toml_candidates) > 1:
+		raise ValueError(
+			f"Expected one *.toml in {job_dir}, found {len(toml_candidates)}: "
+			f"{[p.name for p in toml_candidates]}"
+		)
+	return toml_candidates[0], load_config(toml_candidates[0])
+
+
+def _config_hash(cfg) -> str:
+	"""Stable 8-char hex digest of the full config. A re-aggregate with the
+	same TOML rediscovers its version dir; an edited TOML starts a fresh one.
+	The UTC dir-name prefix is display/sort only — never hashed."""
+	blob = json.dumps(cfg.model_dump(mode="json"), sort_keys=True)
+	return hashlib.sha256(blob.encode()).hexdigest()[:8]
+
+
+def _resolve_version_dir(agg_root: Path, cfg, *, force_new: bool) -> Path:
+	"""Rediscover or create the aggregate version dir ``<UTC>_<hash>/``.
+	Without force_new, reuses the newest existing dir whose ``<hash>`` matches
+	the current config (so re-aggregate / post-extend accumulate into the same
+	dir — the seed set is deliberately NOT in the hash). force_new always makes
+	a fresh dir."""
+	h = _config_hash(cfg)
+	agg_root.mkdir(parents=True, exist_ok=True)
+	if not force_new:
+		matches = sorted(agg_root.glob(f"*_{h}"), key=lambda p: p.stat().st_mtime)
+		if matches:
+			return matches[-1]
+	utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+	vdir = agg_root / f"{utc}_{h}"
+	i = 2
+	while vdir.exists():  # same-second force_new collision; keep <hash> as the suffix
+		vdir = agg_root / f"{utc}-{i}_{h}"
+		i += 1
+	vdir.mkdir(parents=True, exist_ok=True)
+	return vdir
+
+
+def version_dir_for(job_dir, *, force_new: bool = False) -> Path:
+	"""Resolve the aggregate version dir for a job from its TOML — rediscover
+	the newest dir matching the config hash, or create one. Public so the
+	to_ensemble bridge co-locates its output with the matching aggregate."""
+	job_dir = Path(job_dir).resolve()
+	_, cfg = _load_job_config(job_dir)
+	return _resolve_version_dir(job_dir / "aggregate", cfg, force_new=force_new)
+
+
+def _contributing_seeds(out_dir: Path, archive_dir: Path, channels, *, max_seeds: int | None = None) -> list[int]:
+	"""Sorted union of seed integers across ``channels`` (atoms-level: one seed
+	displaces the lattice once and feeds every channel). ``max_seeds`` mirrors
+	the per-channel cap used for the cumulative series."""
+	ids: set[int] = set()
+	for ch in channels:
+		files = _collect_seed_zarrs(out_dir, archive_dir, ch)
+		if max_seeds is not None:
+			files = files[:max_seeds]
+		for p in files:
+			ids.add(int(p.stem.split("_")[1]))
+	return sorted(ids)
+
+
+def _write_seed_provenance(target_dir: Path, seeds: list[int], counts: dict[str, int]) -> None:
+	"""Write ``<target_dir>/seed_counts.json`` = {"seeds": [...], "channels":
+	{channel: n}}. ``seeds`` is the atoms-level record of which frozen-phonon
+	snapshots fed this aggregate (one seed feeds all channels); a per-channel
+	count below len(seeds) flags a channel missing some snapshots."""
+	if not counts:
+		return
+	payload = {"seeds": seeds, "channels": counts}
+	(target_dir / "seed_counts.json").write_text(json.dumps(payload, indent=2) + "\n")
+	log.info("aggregate: seeds=%d, per-channel %s", len(seeds), counts)
+
+
 def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
 	"""Move outputs/ contents into outputs_archive/ and remove outputs/.
 
@@ -104,17 +188,19 @@ def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
 
 def _mean_zarr_channel(out_dir: Path, archive_dir: Path, channel_name: str, *, max_seeds: int | None = None):
 	"""Cross-seed mean of ``seed_*_<channel_name>.zarr`` over outputs/ ∪
-	outputs_archive/; None if none exist. ``max_seeds`` caps to the first N."""
+	outputs_archive/ + the contributing-seed count; ``(None, 0)`` if none
+	exist. ``max_seeds`` caps to the first N."""
 	zarr_files = _collect_seed_zarrs(out_dir, archive_dir, channel_name)
 	if max_seeds is not None:
 		zarr_files = zarr_files[:max_seeds]
 	if not zarr_files:
-		return None
+		return None, 0
 
 	measurements = [abtem.from_zarr(str(f)) for f in zarr_files]
 	# .compute(): downstream gaussian_filter wants a concrete numpy array.
 	mean = abtem.stack(measurements).mean(axis=0)
-	return mean.compute() if hasattr(mean, "compute") else mean
+	mean = mean.compute() if hasattr(mean, "compute") else mean
+	return mean, len(zarr_files)
 
 
 def _emit_channel(
@@ -129,10 +215,12 @@ def _emit_channel(
 	max_seeds: int | None = None,
 ):
 	"""Write {channel}.{tif,zarr} (+ blurred TIFFs) for the cross-seed mean.
-	Returns the mean, or None if no per-seed zarrs exist for this channel."""
-	mean = _mean_zarr_channel(out_dir, archive_dir, channel_name, max_seeds=max_seeds)
+	Returns ``(mean, n_seeds)``: the mean (None if no per-seed zarrs exist for
+	this channel, in which case nothing is written) and the number of seeds
+	that contributed — the caller surfaces a 0 via seed_counts.json."""
+	mean, n_seeds = _mean_zarr_channel(out_dir, archive_dir, channel_name, max_seeds=max_seeds)
 	if mean is None:
-		return None
+		return None, 0
 
 	mean.to_tiff(str(agg_dir / f"{channel_name}.tif"))
 	mean.to_zarr(str(agg_dir / f"{channel_name}.zarr"), overwrite=True)
@@ -142,7 +230,7 @@ def _emit_channel(
 			tag = str(sigma).replace(".", "-")
 			blurred = mean.gaussian_filter(sigma, boundary=blur_boundary)
 			blurred.to_tiff(str(agg_dir / f"{channel_name}_{tag}.tif"))
-	return mean
+	return mean, n_seeds
 
 
 def _suptitle(cfg, kind_label: str) -> str:
@@ -206,18 +294,19 @@ def _load_or_build_static_potential(job_dir: Path, cfg):
 	return pot
 
 
-def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, target_dir: Path) -> None:
+def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, job_dir: Path, target_dir: Path) -> None:
 	"""Phonon-averaged projection at ``target_dir/potential_projection.*``,
 	plus a static-lattice one at ``..._static.*`` if ``emit_static_baseline``.
 	No-op if neither applies. The ground-state Potential is loaded (or built
-	and cached on miss) via ``_load_or_build_static_potential`` and reused
-	for the probe grid (abtem's Grid.match wants a Potential / a thing
-	exposing ``gpts``, not an Images) and the optional static projection."""
-	mean_proj = _mean_zarr_channel(out_dir, archive_dir, "potproj")
+	and cached on miss) via ``_load_or_build_static_potential`` at ``job_dir``
+	(shared across aggregate version dirs) and reused for the probe grid
+	(abtem's Grid.match wants a Potential / a thing exposing ``gpts``, not an
+	Images) and the optional static projection."""
+	mean_proj, _ = _mean_zarr_channel(out_dir, archive_dir, "potproj")
 	if mean_proj is None and not cfg.simulations.emit_static_baseline:
 		return
 
-	static_potential = _load_or_build_static_potential(target_dir.parent, cfg)
+	static_potential = _load_or_build_static_potential(job_dir, cfg)
 	probe = add_probe(ctx, static_potential)
 
 	if mean_proj is not None:
@@ -251,24 +340,28 @@ def _write_pattern_preview(measurement, cfg, agg_dir: Path, stem: str,
 # --------------------------------------------------------------------------- #
 
 
-def aggregate_job(job_dir) -> None:
-	"""Merge per-seed outputs in a job_dir into the aggregate/ subdirectory.
+def aggregate_job(job_dir, *, force_new: bool = False) -> None:
+	"""Merge per-seed outputs in a job_dir into a versioned, namespaced
+	aggregate dir ``aggregate/<UTC>_<hash>/``.
 
 	Args:
 		job_dir: path to the job directory
 		           (``gen_*/<phase>_<hkl>_<tilt>/``).
+		force_new: skip rediscovery and always create a fresh version dir.
 
 	Steps:
 		1. Verify no ``seeds/*.todo`` remain (job must be complete).
 		2. Load the job's TOML, build a RunContext.
-		3. For each scan detector in ``ctx.detectors``: mean per-seed
-		   ``seed_*_<det>.zarr`` from outputs/ ∪ outputs_archive/ into
-		   ``aggregate/<det>.{tif,zarr}`` + gaussian-blurred TIFF variants.
-		4. If ``do_diffraction``: same for ``diff``, plus a ``diff.png`` preview.
-		5. If ``do_cbed``: same for ``cbed``, plus a ``cbed.png`` preview.
-		6. Mean ``seed_*_potproj.zarr`` into the phonon-averaged projection
-		   preview; if ``emit_static_baseline``, also a separate static
-		   projection preview from the same ground-state potential.
+		3. Resolve ``aggregate/<UTC>_<hash>/`` — reuse the newest dir matching
+		   the config hash, or make a fresh one (force_new always does).
+		4. Scan detectors -> ``<vdir>/scans/<det>.{tif,zarr}`` + blurs;
+		   ``do_diffraction`` -> ``<vdir>/patterns/diff.*`` + diff.png;
+		   ``do_cbed`` -> ``<vdir>/patterns/cbed.*`` + cbed.png.
+		5. Seed provenance -> ``<vdir>/seed_counts.json`` (atoms-level seed
+		   list + per-channel counts).
+		6. Projection preview(s) -> ``<vdir>/projections/`` (phonon-averaged
+		   ``seed_*_potproj`` mean + optional static baseline) from the cached
+		   ground-state potential.
 		7. Move outputs/ contents into outputs_archive/ unless
 		   ``simulations.test_enabled``, so future abtem-run-extend batches
 		   land in a fresh outputs/ and accumulate into the next mean.
@@ -299,59 +392,60 @@ def aggregate_job(job_dir) -> None:
 				"Run all workers before aggregating."
 			)
 
-	toml_candidates = list(job_dir.glob("*.toml"))
-	if not toml_candidates:
-		raise FileNotFoundError(f"No *.toml in {job_dir}")
-	if len(toml_candidates) > 1:
-		raise ValueError(
-			f"Expected one *.toml in {job_dir}, found {len(toml_candidates)}: "
-			f"{[p.name for p in toml_candidates]}"
-		)
-
-	cfg = load_config(toml_candidates[0])
+	_, cfg = _load_job_config(job_dir)
 	ctx = resolve_context(cfg)
 
-	agg_dir.mkdir(parents=True, exist_ok=True)
+	vdir = _resolve_version_dir(agg_dir, cfg, force_new=force_new)
+	scans_dir = vdir / "scans"
+	patterns_dir = vdir / "patterns"
+	proj_dir = vdir / "projections"
 
-	# 1. Scan channels (with blurs)
+	seed_counts: dict[str, int] = {}
+	# 1. Scan channels (with blurs) -> scans/
 	if ctx.do_full_run:
+		scans_dir.mkdir(exist_ok=True)
 		for det_name in ctx.detectors:
-			_emit_channel(out_dir, archive_dir, agg_dir, det_name, with_blurs=True,
-				blur_sigmas=ctx.blur_sigmas, blur_boundary=ctx.blur_boundary)
+			_, seed_counts[det_name] = _emit_channel(out_dir, archive_dir, scans_dir, det_name,
+				with_blurs=True, blur_sigmas=ctx.blur_sigmas, blur_boundary=ctx.blur_boundary)
 
-	# 2. Plane-wave diffraction
+	# 2/3. Plane-wave diffraction + CBED -> patterns/ (+ PNG previews)
+	if ctx.do_diffraction or ctx.do_cbed:
+		patterns_dir.mkdir(exist_ok=True)
 	if ctx.do_diffraction:
-		diff_mean = _emit_channel(out_dir, archive_dir, agg_dir, "diff", with_blurs=False)
+		diff_mean, seed_counts["diff"] = _emit_channel(out_dir, archive_dir, patterns_dir, "diff", with_blurs=False)
 		if diff_mean is not None:
-			_write_pattern_preview(diff_mean, cfg, agg_dir, "diff", "diffraction", figsize=(10, 6))
-
-	# 3. CBED
+			_write_pattern_preview(diff_mean, cfg, patterns_dir, "diff", "diffraction", figsize=(10, 6))
 	if ctx.do_cbed:
-		cbed_mean = _emit_channel(out_dir, archive_dir, agg_dir, "cbed", with_blurs=False)
+		cbed_mean, seed_counts["cbed"] = _emit_channel(out_dir, archive_dir, patterns_dir, "cbed", with_blurs=False)
 		if cbed_mean is not None:
-			_write_pattern_preview(cbed_mean, cfg, agg_dir, "cbed", "CBED", figsize=(8, 6))
+			_write_pattern_preview(cbed_mean, cfg, patterns_dir, "cbed", "CBED", figsize=(8, 6))
 
-	# 4. Projection preview(s): phonon-averaged + optional static baseline.
-	_write_projection_previews(out_dir, archive_dir, ctx, cfg, agg_dir)
+	# 4. Seed provenance -> <vdir>/seed_counts.json (atoms-level seeds + counts).
+	seeds = _contributing_seeds(out_dir, archive_dir, list(seed_counts))
+	_write_seed_provenance(vdir, seeds, seed_counts)
 
-	# 5. Archive the per-seed outputs so future extends can build on them
+	# 5. Projection preview(s) -> projections/: phonon-averaged + optional static.
+	proj_dir.mkdir(exist_ok=True)
+	_write_projection_previews(out_dir, archive_dir, ctx, cfg, job_dir, proj_dir)
+
+	# 6. Archive the per-seed outputs so future extends can build on them
 	#    (test_enabled keeps outputs/ in place for diagnostics).
 	if not ctx.test_enabled:
 		_archive_per_seed_outputs(out_dir, archive_dir)
 
 
-def aggregate_series(job_dir, *, n_phonons: int | None = None) -> int:
-	"""Emit cumulative-mean frames at <job_dir>/aggregate/n_<k:03d>/ for
-	k in 1..N. Each subdir holds the per-channel aggregate computed from the
-	first k seeds (sorted by seed integer) — useful for visualising 1/sqrt(N)
-	convergence without re-running multislice.
+def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool = False) -> int:
+	"""Emit cumulative-mean frames at <vdir>/series/n_<k:03d>/ for k in 1..N,
+	where <vdir> = aggregate/<UTC>_<hash>/ (resolved as in aggregate_job). Each
+	n_<k>/ holds the per-channel aggregate over the first k seeds (sorted by
+	seed integer), namespaced scans/ + patterns/, plus its own seed_counts.json
+	— useful for visualising 1/sqrt(N) convergence without re-running multislice.
 
-	n_phonons caps N (default: all available seeds). Returns N emitted.
-	The projection preview (phonon-averaged + optional static baseline) is
-	written ONCE at aggregate/, over ALL available seeds — the
-	``n_phonons`` cap applies only to the per-k cumulative-mean frames,
-	not to the projection. Does NOT archive outputs/ (read-only over the
-	per-seed data).
+	n_phonons caps N (default: all available seeds). force_new skips version-dir
+	rediscovery. Returns N emitted. The projection preview (phonon-averaged +
+	optional static baseline) is written ONCE at <vdir>/projections/, over ALL
+	available seeds — the ``n_phonons`` cap applies only to the per-k frames.
+	Does NOT archive outputs/ (read-only over the per-seed data).
 
 	Raises FileNotFoundError / RuntimeError on the same conditions as
 	aggregate_job.
@@ -373,18 +467,10 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None) -> int:
 				"Run all workers before aggregating."
 			)
 
-	toml_candidates = list(job_dir.glob("*.toml"))
-	if not toml_candidates:
-		raise FileNotFoundError(f"No *.toml in {job_dir}")
-	if len(toml_candidates) > 1:
-		raise ValueError(
-			f"Expected one *.toml in {job_dir}, found {len(toml_candidates)}: "
-			f"{[p.name for p in toml_candidates]}"
-		)
-
-	cfg = load_config(toml_candidates[0])
+	_, cfg = _load_job_config(job_dir)
 	ctx = resolve_context(cfg)
-	agg_dir.mkdir(parents=True, exist_ok=True)
+	vdir = _resolve_version_dir(agg_dir, cfg, force_new=force_new)
+	proj_dir = vdir / "projections"
 
 	# Total seeds from the first channel that has any zarrs (scan detectors
 	# first, then diff, then cbed).
@@ -409,38 +495,48 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None) -> int:
 	if n_max < 1:
 		raise ValueError(f"n_phonons must be >= 1, resolved to {n_max}")
 
-	# Projection preview(s) — once, at agg_dir (not per-k):
+	# Projection preview(s) — once, at <vdir>/projections/ (not per-k):
 	# phonon-averaged over ALL seeds + optional static baseline.
-	_write_projection_previews(out_dir, archive_dir, ctx, cfg, agg_dir)
+	proj_dir.mkdir(exist_ok=True)
+	_write_projection_previews(out_dir, archive_dir, ctx, cfg, job_dir, proj_dir)
 
-	# Per-k cumulative-mean frames.
+	# Per-k cumulative-mean frames at <vdir>/series/n_<k>/.
+	series_dir = vdir / "series"
 	for k in range(1, n_max + 1):
-		k_dir = agg_dir / f"n_{k:03d}"
-		k_dir.mkdir(parents=True, exist_ok=True)
+		k_dir = series_dir / f"n_{k:03d}"
+		k_scans = k_dir / "scans"
+		k_patterns = k_dir / "patterns"
+		seed_counts: dict[str, int] = {}
 		if ctx.do_full_run:
+			k_scans.mkdir(parents=True, exist_ok=True)
 			for det_name in ctx.detectors:
-				_emit_channel(
-					out_dir, archive_dir, k_dir, det_name,
+				_, seed_counts[det_name] = _emit_channel(
+					out_dir, archive_dir, k_scans, det_name,
 					with_blurs=True, blur_sigmas=ctx.blur_sigmas, max_seeds=k,
 				)
+		if ctx.do_diffraction or ctx.do_cbed:
+			k_patterns.mkdir(parents=True, exist_ok=True)
 		if ctx.do_diffraction:
-			diff_mean = _emit_channel(
-				out_dir, archive_dir, k_dir, "diff",
+			diff_mean, seed_counts["diff"] = _emit_channel(
+				out_dir, archive_dir, k_patterns, "diff",
 				with_blurs=False, max_seeds=k,
 			)
 			if diff_mean is not None:
 				_write_pattern_preview(
-					diff_mean, cfg, k_dir, "diff", "diffraction", figsize=(10, 6),
+					diff_mean, cfg, k_patterns, "diff", "diffraction", figsize=(10, 6),
 				)
 		if ctx.do_cbed:
-			cbed_mean = _emit_channel(
-				out_dir, archive_dir, k_dir, "cbed",
+			cbed_mean, seed_counts["cbed"] = _emit_channel(
+				out_dir, archive_dir, k_patterns, "cbed",
 				with_blurs=False, max_seeds=k,
 			)
 			if cbed_mean is not None:
 				_write_pattern_preview(
-					cbed_mean, cfg, k_dir, "cbed", "CBED", figsize=(8, 6),
+					cbed_mean, cfg, k_patterns, "cbed", "CBED", figsize=(8, 6),
 				)
+		k_dir.mkdir(parents=True, exist_ok=True)
+		seeds = _contributing_seeds(out_dir, archive_dir, list(seed_counts), max_seeds=k)
+		_write_seed_provenance(k_dir, seeds, seed_counts)
 
 	return n_max
 

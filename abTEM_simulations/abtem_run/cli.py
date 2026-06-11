@@ -43,6 +43,7 @@ def run_pipeline(
 	*,
 	generate_only: bool = False,
 	resume_dir=None,
+	force_new: bool = False,
 ) -> Path:
 	"""Library entry point for the in-process pipeline.
 
@@ -118,7 +119,7 @@ def run_pipeline(
 			log.info(f"abtem-run: [{job_dir.name}] outputs/ missing — aggregate already run; skipping")
 			continue
 		log.info(f"abtem-run: [{job_dir.name}] aggregating")
-		aggregate_job(job_dir)
+		aggregate_job(job_dir, force_new=force_new)
 
 	log.info("abtem-run: finished")
 	return run_dir
@@ -171,9 +172,9 @@ def main():
 		default=None,
 		metavar="JOB_DIR",
 		help=(
-			"emit cumulative-mean frames at <JOB_DIR>/aggregate/n_<k:03d>/ for "
-			"k in 1..N (N = --n-phonons or all available seeds); for visualising "
-			"1/sqrt(N) convergence."
+			"emit cumulative-mean frames at <vdir>/series/n_<k:03d>/ for "
+			"k in 1..N (N = --n-phonons or all available seeds), where <vdir> is "
+			"the aggregate version dir; for visualising 1/sqrt(N) convergence."
 		),
 	)
 	parser.add_argument(
@@ -182,6 +183,15 @@ def main():
 		default=None,
 		metavar="N",
 		help="cap N for --aggregate-series (default: all available seeds).",
+	)
+	parser.add_argument(
+		"--force-new",
+		action="store_true",
+		help=(
+			"force a fresh aggregate version dir (aggregate/<UTC>_<hash>/) instead "
+			"of rediscovering and reusing the newest one matching the config hash. "
+			"Applies to --aggregate / --aggregate-series and the resume re-aggregate."
+		),
 	)
 	args = parser.parse_args()
 
@@ -196,16 +206,16 @@ def main():
 		parser.error("--n-phonons only applies to --aggregate-series")
 
 	if args.aggregate is not None:
-		aggregate_job(args.aggregate)
+		aggregate_job(args.aggregate, force_new=args.force_new)
 	elif args.aggregate_series is not None:
-		n_emitted = aggregate_series(args.aggregate_series, n_phonons=args.n_phonons)
-		log.info(f"abtem-run: emitted {n_emitted} aggregate/n_<k>/ frame(s)")
+		n_emitted = aggregate_series(args.aggregate_series, n_phonons=args.n_phonons, force_new=args.force_new)
+		log.info(f"abtem-run: emitted {n_emitted} series/n_<k>/ frame(s)")
 	elif args.resume is not None:
 		if args.generate_only:
 			parser.error("--generate-only cannot be combined with --resume")
-		run_pipeline(resume_dir=args.resume)
+		run_pipeline(resume_dir=args.resume, force_new=args.force_new)
 	else:
-		run_pipeline(args.config, generate_only=args.generate_only)
+		run_pipeline(args.config, generate_only=args.generate_only, force_new=args.force_new)
 	return 0
 
 

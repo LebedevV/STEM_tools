@@ -149,7 +149,7 @@ class Simulations(BaseModel):
 	# abtem.Images.gaussian_filter(boundary=...).
 	blur_boundary: Literal["nearest", "constant", "reflect", "wrap"] = Field(default="nearest")
 	# Gaussian-blur sigmas (real-space units) — one blurred TIFF per sigma
-	# per channel: aggregate/<channel>_<sigma>.tif. [] skips the blur previews.
+	# per channel: <vdir>/scans/<channel>_<sigma>.tif. [] skips the blur previews.
 	blur_sigmas: list[float] = Field(default_factory=lambda: [0.025, 0.1, 0.25])
 
 	@field_validator("blur_sigmas", mode="before")
