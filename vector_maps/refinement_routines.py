@@ -416,7 +416,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 	# (align) or also a,b,gamma (prefit). Runs before shift_ab (which needs abg/phi).
 	if do_fft_align or do_fft_prefit:
 		from fft_prefit import fft_prefit
-		_fft_img = cv2.imread(folder + fname + '.tif', cv2.IMREAD_UNCHANGED)
+		_fft_img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
 		lat_params.update(fft_prefit(_fft_img, lat_params, calib, refine_abg=do_fft_prefit))
 
 	# Re-reference the origin from sublattice A to B once, before any
@@ -441,7 +441,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		
 		zeros,_,_ = get_coords_from_ij(ij_cr,param_vec_zeros,max_lim,lat_params, m_zeros, extra_pars,crop=False)
 		
-		_im = cv2.imread(folder+fname+'.tif', cv2.IMREAD_UNCHANGED)
+		_im = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
 		H, W = _im.shape[:2]
 		
 		fig, ax = plt.subplots(figsize=(6, 4))

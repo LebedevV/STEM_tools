@@ -11,6 +11,8 @@ import atomap.api as am
 import scipy
 import scipy.ndimage
 
+from routines import resolve_frame_path
+
 
 
 def detect_columns(
@@ -38,7 +40,7 @@ def detect_columns(
 	#fpath = os.path.join(folder, fname)
 	
 	img_name = source_fname if source_fname is not None else fname
-	fpath = os.path.join(folder, img_name)
+	fpath = resolve_frame_path(folder, img_name)
 
 	s = hs.load(fpath)
 	if not hasattr(s, "data"):
