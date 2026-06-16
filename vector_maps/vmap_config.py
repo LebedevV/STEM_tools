@@ -85,7 +85,9 @@ class Detect(BaseModel):
 
 
 class Pass(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # extra="allow": any unrecognised key is treated as a refinement_run kwarg and
+    # passed through (validated against its signature in vmap_run._run_pass).
+    model_config = ConfigDict(extra="allow")
     name: str = "pass"
     sub_area: Optional[list[float]] = None
     vec_scale: float = 0.05

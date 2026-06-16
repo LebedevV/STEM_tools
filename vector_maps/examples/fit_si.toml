@@ -1,0 +1,99 @@
+# Si<110> dumbbell. The two dumbbell columns are parameterised as a polar extra_pars
+# vector (db_dist, db_angle) off the origin column, plus a centering vector. Staging
+# lattice -> dumbbell -> free avoids the db_dist<->lattice degeneracy a single all-free
+# pass is prone to. Stages toggle extra_par fits in the pass fit-mask; recall_zero and
+# export_sublattice_xy pass through to refinement_run. Point [io] at your own frame.
+[io]
+folder = "./"
+fname  = "si110"
+
+[calibration]
+source = "value"
+value  = 0.01406                      # nm/pixel
+
+[lattice]
+abg      = [0.3867, 0.5469, 89.75]    # nm,nm,deg -- Si<110> projected cell seed
+base     = [0.0, 0.0, 1.5]            # origin shift + frame rotation (deg) seed
+fit_abg  = [true, true, true]
+fit_base = [true, true, true]
+
+# origin Si column, fixed (fully correlated with base shx/shy)
+[[motif]]
+label = "A_1"
+el    = "Si"
+coord = [0.0, 0.0]
+fit   = [false, false]
+
+# centered column of the origin sublattice
+[[motif]]
+label = "A_1c"
+el    = "Si"
+coord = [0.0, 0.0]
+eq = [
+  "= motif['A_1'][0] + extra_pars['centering_a']",
+  "= motif['A_1'][1] + extra_pars['centering_b']",
+]
+
+# dumbbell partner: A_1 + (db_dist, db_angle) polar vector
+[[motif]]
+label = "B_1"
+el    = "Si"
+coord = [0.0, 0.2]
+eq = [
+  "= motif['A_1'][0] + extra_pars['db_dist']*np.sin(extra_pars['db_angle']/180*np.pi)/lat_params['abg'][0]",
+  "= motif['A_1'][1] + extra_pars['db_dist']*np.cos(extra_pars['db_angle']/180*np.pi)/lat_params['abg'][1]",
+]
+
+# centered column of the dumbbell sublattice
+[[motif]]
+label = "B_1c"
+el    = "Si"
+coord = [0.5, 0.7]
+eq = [
+  "= motif['B_1'][0] + extra_pars['centering_a']",
+  "= motif['B_1'][1] + extra_pars['centering_b']",
+]
+
+[extra_pars.db_dist]                  # dumbbell length (nm)
+value = 0.136
+fit   = true
+
+[extra_pars.db_angle]                 # dumbbell tilt off b (deg)
+value = 0.0
+fit   = true
+
+[extra_pars.centering_a]
+value = 0.5
+fit   = true
+
+[extra_pars.centering_b]
+value = 0.5
+fit   = true
+
+[run]
+gui  = false
+seed = false
+
+# stage 1: lock the lattice with the dumbbell frozen
+[[run.passes]]
+name        = "lattice"
+sub_area    = [4.0, 10.0, 4.0, 10.0]
+max_dist    = 0.1
+recall_zero = true
+fit = { abg = [true,true,true], base = [true,true,true], db_dist = [false], db_angle = [false], centering_a = [false], centering_b = [false] }
+
+# stage 2: free the dumbbell with the lattice frozen
+[[run.passes]]
+name     = "dumbbell"
+sub_area = [4.0, 10.0, 4.0, 10.0]
+max_dist = 0.07
+fit = { abg = [false,false,false], base = [false,false,false], db_dist = [true], db_angle = [true], centering_a = [true], centering_b = [true] }
+
+# stage 3: all free, write per-column residuals
+[[run.passes]]
+name                 = "free"
+sub_area             = [4.0, 10.0, 4.0, 10.0]
+max_dist             = 0.07
+save                 = true
+export_sublattice_xy = true
+fit = { abg = [true,true,true], base = [true,true,true], db_dist = [true], db_angle = [true], centering_a = [true], centering_b = [true] }

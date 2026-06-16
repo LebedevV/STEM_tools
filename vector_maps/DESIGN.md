@@ -90,14 +90,16 @@ point set carry forward. A step is either a **fit** or a **detect**.
 
 - **`sub_area`** `[x0, x1, y0, y1]` — ROI.
 - **`max_dist`** — pairing cutoff (required by `refinement_run`). Any other
-  `refinement_run` kwarg (`kernel`, `relative_to`, `extra_shift_ab`,
+  `refinement_run` kwarg (`kernel`, `relative_to`, `shift_ab`,
   `recall_zero`, `export_sublattice_xy`) is also accepted on a step and passed
   through.
-- **`fit`** — fit mask, keyed by `abg` / `base` / motif label, each a bool list
-  (`true` = refine, `false` = hold); written into `fit_abg` / `fit_base` / the
-  motif `fit`. The mask **mutates the running state (cumulative)**: a pass changes
-  only the params it lists, others keep whatever the previous pass left them.
-  `eq`-coupled coords ignore it.
+- **`fit`** — fit mask, keyed by `abg` / `base` / motif label / extra_par name, each
+  a bool list (`true` = refine, `false` = hold; an extra_par takes a one-element
+  `[true]`/`[false]`); written into `fit_abg` / `fit_base` / the motif `fit` / the
+  extra_par fit flag. The mask **mutates the running state (cumulative)**: a pass
+  changes only the params it lists, others keep whatever the previous pass left them.
+  `eq`-coupled coords ignore it — stage such a motif through its extra_par's flag
+  (an `eq`-coupled extra_par can't be toggled and is rejected).
 - **`vec_scale`**, **`save`** (default `false`), **`gui`** (default `false`).
 - **`refine`** (default `true`) — `false` = plot-only: skip the optimiser,
   compute from current params, emit a / b / diff stats. `--no-fit` forces it
