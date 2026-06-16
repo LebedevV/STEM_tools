@@ -113,6 +113,20 @@ def test_uc_figure_smoke():
 	os.remove(out)
 
 
+def test_to_tiffs_resolves_tiff_extension():
+	# unit_cell_average_to_tiffs must find a .tiff frame even when handed a .tif path
+	import cv2
+	import os
+	import tempfile
+	from unit_cell_average import unit_cell_average_to_tiffs
+	d = tempfile.mkdtemp()
+	cv2.imwrite(os.path.join(d, "frame.tiff"), _synth(A, B, ORIG).astype(np.float32))
+	lat = {"abg": [2.2, 2.2, 90.0], "base": [0.7, 0.5, 0.0]}
+	out = os.path.join(d, "out")
+	unit_cell_average_to_tiffs(os.path.join(d, "frame.tif"), lat, calib=0.1, out_stem=out)
+	assert os.path.exists(out + "_uc_mean.tif")
+
+
 if __name__ == "__main__":
 	for _name, _fn in sorted(globals().items()):
 		if _name.startswith("test_") and callable(_fn):

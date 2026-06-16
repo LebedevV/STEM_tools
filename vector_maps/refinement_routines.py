@@ -78,7 +78,7 @@ def get_coords_from_ij(ij,param_vec,max_lim,lat_params, motif_r, extra_pars,crop
 	ij_ref = ij_ref.reshape(-1,2)
 	#print(str(full_set.shape)+' full_lat')
 	
-	#rotate the whole set; vectorized now
+	#rotate by phi (= visual CCW in the y-down image frame); same R reused in vproj + lattice_px_from_fit
 	#lat = np.array([ (x*np.cos(phi) + y*np.sin(phi), y*np.cos(phi) - x*np.sin(phi)) for x,y in lat])
 	lat_x = full_set[:,0]
 	lat_y = full_set[:,1]
@@ -410,7 +410,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		recall_zero=False
 	
 		
-	s = load_frame(folder,fname,calib)#.T#!TODO is .T needed?
+	s = load_frame(folder,fname,calib)
 	dataset = load_dataset_auto(folder, dataset_fname if dataset_fname is not None else fname)
 	#dataset = np.load(folder+fname.split('.')[0]+'.npy').T
 	#dataset = load_dataset_auto(folder, fname)
@@ -456,8 +456,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		
 		sc = ax.scatter(th_relevant[:,0],th_relevant[:,1], marker='o',s=50, color='r')
 		
-		ax.imshow(_im#.T
-				,extent=[0, W*calib, 0, H*calib],origin='upper')#,origin='upper')#,origin='lower')
+		ax.imshow(_im, extent=[0, W*calib, H*calib, 0], origin='upper')   # y-down (row 0 on top): matches plot_quiver + detection
 		
 		ax_shx = fig.add_axes([0.05, 0.12, 0.4, 0.03])
 		ax_shy = fig.add_axes([0.05, 0.07, 0.4, 0.03])
@@ -487,8 +486,9 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 			lat_params['base'][0] = s_shx.val
 			lat_params['base'][1] = s_shy.val
 			
+			# recall_zero=False here: auto-recentring would overwrite the shx/shy sliders being dragged
 			ij_cr, th_relevant, _, _, _ = preprocess_dataset(lat_params,motif,extra_pars,
-										dataset,calib,recall_zero=recall_zero,
+										dataset,calib,recall_zero=False,
 				max_dist=max_dist,sub_area=sub_area)
 			sc.set_offsets(np.c_[th_relevant])	 # update the scatter in-place
 			
