@@ -429,7 +429,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		dx, dy = ab_shift_vector(lat_params, motif, extra_pars, shift_ab)
 		lat_params['base'] = [lat_params['base'][0] + dx, lat_params['base'][1] + dy, lat_params['base'][2]]
 
-	ij_cr, th_relevant, observed_xy, _, _ = preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=recall_zero,
+	ij_cr, th_relevant, observed_xy, _, _ = preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=False,
 							max_dist=max_dist,sub_area=sub_area) #This one for a preview; no need to load the dataframe
 	
 
@@ -457,7 +457,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		sc = ax.scatter(th_relevant[:,0],th_relevant[:,1], marker='o',s=50, color='r')
 		
 		ax.imshow(_im#.T
-				,extent=[0, W*calib, 0, H*calib],origin='lower')#,origin='upper')#,origin='lower')
+				,extent=[0, W*calib, 0, H*calib],origin='upper')#,origin='upper')#,origin='lower')
 		
 		ax_shx = fig.add_axes([0.05, 0.12, 0.4, 0.03])
 		ax_shy = fig.add_axes([0.05, 0.07, 0.4, 0.03])
