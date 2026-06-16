@@ -16,6 +16,15 @@ from dicts_handling import unpack_to_dicts
 
 from vmap_config import AppConfig
 
+import inspect
+
+# A pass forwards any non-schema key to refinement_run (see DESIGN.md). _RUN_SETS are
+# the kwargs the runner owns, so they can't be set per-pass; the rest must name a real
+# refinement_run parameter.
+_REFINE_PARAMS = set(inspect.signature(refinement_run).parameters)
+_RUN_SETS = {"folder", "sf", "fname", "calib", "lat_params", "motif", "extra_pars",
+             "show_initial_spots", "vec_scale", "sub_area", "max_dist", "do_fit", "dataset_fname"}
+
 
 # ---- config models -> the dicts refinement_run expects ---------------------
 
@@ -79,7 +88,7 @@ def _save_seed(path, lat_params):
 
 # ---- pass execution --------------------------------------------------------
 
-def _apply_fit(mask, lat_params, motif):
+def _apply_fit(mask, lat_params, motif, extra_pars):
     for key, flags in mask.items():
         if key == "abg":
             lat_params["fit_abg"] = list(flags)
@@ -87,6 +96,11 @@ def _apply_fit(mask, lat_params, motif):
             lat_params["fit_base"] = list(flags)
         elif key in motif:
             motif[key]["fit"] = list(flags)
+        elif key in extra_pars:
+            val, spec = extra_pars[key]
+            if isinstance(spec, str):
+                raise KeyError(f"fit mask cannot toggle eq-coupled extra_par '{key}'")
+            extra_pars[key] = (val, bool(flags[0]))
         else:
             raise KeyError(f"fit mask references unknown param '{key}'")
 
@@ -108,10 +122,23 @@ def _expand_areas(exp):
     return areas
 
 
+def _passthrough(p):
+    # non-schema pass keys -> refinement_run kwargs (recall_zero, export_sublattice_xy,
+    # kernel, relative_to, ...). Reject runner-owned kwargs and non-parameters.
+    out = {}
+    for k, v in (p.__pydantic_extra__ or {}).items():
+        if k in _RUN_SETS:
+            raise KeyError(f"pass '{p.name}': '{k}' is set by the runner, not per-pass")
+        if k not in _REFINE_PARAMS:
+            raise KeyError(f"pass '{p.name}': '{k}' is not a refinement_run kwarg")
+        out[k] = v
+    return out
+
+
 def _run_pass(p, folder, fname, calib, lat_params, motif, extra_pars,
               gui_master, refine_master, sub_area=None, dataset_fname=None):
     if p.fit:
-        _apply_fit(p.fit, lat_params, motif)
+        _apply_fit(p.fit, lat_params, motif, extra_pars)
     for m in p.add:
         motif[m.label] = _atom_entry(m)
     sa = sub_area if sub_area is not None else p.sub_area
@@ -120,7 +147,7 @@ def _run_pass(p, folder, fname, calib, lat_params, motif, extra_pars,
         folder, sf, fname, calib, lat_params, motif, extra_pars=extra_pars,
         show_initial_spots=(gui_master and p.gui), vec_scale=p.vec_scale,
         sub_area=sa, max_dist=p.max_dist, do_fit=(p.refine and refine_master),
-        dataset_fname=dataset_fname,
+        dataset_fname=dataset_fname, **_passthrough(p),
     )
     unpack_to_dicts(vec, lat_params, motif, extra_pars)
     return meta
@@ -129,6 +156,7 @@ def _run_pass(p, folder, fname, calib, lat_params, motif, extra_pars,
 def _merge_body(parent, body):
     # body sub-pass inherits the parent expand pass; overrides only what it sets
     overrides = {f: getattr(body, f) for f in body.model_fields_set if f not in ("expand", "body")}
+    overrides.update(body.__pydantic_extra__ or {})
     return parent.model_copy(update={**overrides, "expand": None, "body": []})
 
 
