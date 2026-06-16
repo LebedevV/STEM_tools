@@ -25,7 +25,7 @@ def plot_lattice(img,sublattice_list,fname,fl,sf,text):
 	
 	
 	atom_lattice = am.Atom_Lattice(
-			image=img,#.transpose(signal_axes=[1, 0]),#TODO! is this .T needed?
+			image=img,
 			sublattice_list=sublattice_list)
 	s = atom_lattice.get_sublattice_atom_list_on_image()
 	

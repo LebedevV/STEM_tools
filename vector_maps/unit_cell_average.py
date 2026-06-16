@@ -4,6 +4,8 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
+import os
+
 import numpy as np
 
 
@@ -262,7 +264,8 @@ def unit_cell_average_to_tiffs(image_path, lat_params, calib, motif=None, out_st
 	Convenience for a driver's post-fit step: pass the refined lat_params + motif + calib.
 	"""
 	import cv2
-	img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+	from routines import resolve_frame_path
+	img = cv2.imread(resolve_frame_path(os.path.dirname(image_path), os.path.basename(image_path)), cv2.IMREAD_UNCHANGED)
 	if img is None:
 		raise FileNotFoundError(image_path)
 	kwargs.setdefault("method", "raw")           # real-cell footprint, sharing the schematic's orientation
