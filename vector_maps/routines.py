@@ -4,6 +4,7 @@ __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
 import os
+import filecmp
 import numpy as np
 import hyperspy.api as hs
 import pandas as pd
@@ -34,6 +35,27 @@ def rotate_vec(v,an):
 	#print(x,y)
 	return x,y
 
+def resolve_frame_path(folder, fname):
+	'''Path to the frame TIFF, accepting .tif/.tiff/.TIF/.TIFF (a trailing tiff
+	extension on `fname` is ignored). If several variants are present they must be
+	byte-identical, otherwise it raises.'''
+	low = fname.lower()
+	if low.endswith('.tiff'):
+		stem = fname[:-5]
+	elif low.endswith('.tif'):
+		stem = fname[:-4]
+	else:
+		stem = fname
+	cands = [os.path.join(folder, stem + ext) for ext in ('.tif', '.tiff', '.TIF', '.TIFF')]
+	found = [p for p in cands if os.path.exists(p)]
+	if not found:
+		raise FileNotFoundError(os.path.join(folder, stem + '.{tif,tiff,TIF,TIFF}'))
+	differ = [p for p in found[1:] if not filecmp.cmp(found[0], p, shallow=False)]
+	if differ:
+		raise ValueError('frame TIFF variants differ byte-wise: ' + ', '.join([found[0]] + differ))
+	return found[0]
+
+
 def load_frame(folder,fname,calib_size_by_px): #TODO - we do not really have to have a tiff
 	'''
 	Loads a tiff file provided as a hyperspy object
@@ -43,7 +65,7 @@ def load_frame(folder,fname,calib_size_by_px): #TODO - we do not really have to 
 	output:
 		s - hyperspy 2Dsignal with pixels enforced to be square 
 	'''
-	s = hs.load(folder+fname+'.tif')#TODO shall we check if '.tiff' is there?
+	s = hs.load(resolve_frame_path(folder, fname))
 	metadata = {}
 	#'''
 	metadata['fname'] = fname#TODO should we return this mdata?
