@@ -350,7 +350,10 @@ def preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=Fal
 		
 	df_raw = df_raw.dropna()
 	observed_xy = np.array([ (i,j) for i,j in df_raw[['x_obs', 'y_obs']].values])
-		
+	if len(observed_xy) == 0:
+		raise ValueError('no observed points fall in sub_area %s (nm); check the calibration '
+				 'and sub_area against the frame extent' % (sub_area,))
+
 	ij = gen_ij((-170,170))
 
 	if recall_zero:
