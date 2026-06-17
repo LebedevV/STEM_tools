@@ -6,7 +6,6 @@ __license__ = "GPL-v3"
 import os
 import numpy as np
 import atomap.api as am
-#from scipy.spatial.transform import Rotation as R
 import scipy
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
@@ -147,9 +146,6 @@ def filter_lat(ij,obs,param,lat_params, motif, extra_pars,max_d=0):
 	print('now, shapes: ij - %s, theor - %s' % (str(np.array(ij).shape), str(theor.shape)) )
 	
 	
-	dist_matrix = cdist(obs, theor)
-	min_idxs  = np.argmin(dist_matrix, axis=1)
-
 	dist_matrix = cdist(obs, theor)
 	min_idxs = np.argmin(dist_matrix, axis=1)
 	matched_dists = dist_matrix[np.arange(len(obs)), min_idxs]
@@ -404,8 +400,10 @@ def ab_shift_vector(lat_params, motif, extra_pars, shift_ab):
 	return float(pb[0] - pa[0]), float(pb[1] - pa[1])
 
 
-def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_zero=False,show_initial_spots=False,vec_scale=0.05,
+def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall_zero=False,show_initial_spots=False,vec_scale=0.05,
 			do_fit=True,relative_to=None,kernel=4,shift_ab=None,do_fft_align=False,do_fft_prefit=False,sub_area=None,max_dist=0,export_sublattice_xy=False,dataset_fname=None):
+	if extra_pars is None:
+		extra_pars = {}
 	if not do_fit:
 		recall_zero=False
 	
@@ -729,9 +727,9 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		
 		
 		plot_quiver(file_s + '_vmap_abs',th_relevant2,vdiff_xy,ang,
-				vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=calib,df=diff_df)
+				vec_scale,hd_w=2,units_v='$1 \\AA$',ell=False,calib=calib,df=diff_df)
 		plot_quiver(file_s + '_vmap_rotated',th_relevant2,vdiff_xy_corr,ang_corr,
-				vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=calib,df=diff_df)
+				vec_scale,hd_w=2,units_v='$1 \\AA$',ell=False,calib=calib,df=diff_df)
 		
 		#_corr meant to be aligned with OX already, compensating phi
 		phi = phi*np.pi/180
@@ -745,9 +743,9 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars={},recall_z
 		proj_a90 = base_y*proj_a90[:,None]
 				
 		plot_quiver(file_s + '_vmap_proj_a',th_relevant2,proj_a,ang,
-				vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=calib)
+				vec_scale,hd_w=2,units_v='$1 \\AA$',ell=False,calib=calib)
 		plot_quiver(file_s + '_vmap_proj_a90',th_relevant2,proj_a90,ang,
-				vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=calib)
+				vec_scale,hd_w=2,units_v='$1 \\AA$',ell=False,calib=calib)
 		
 		if 'I0' in diff_df.columns and relative_to is None:
 			at_labels = [i+'\n'+j for i,j in zip(labels_raw,types_raw)]
