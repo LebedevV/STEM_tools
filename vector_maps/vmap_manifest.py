@@ -17,7 +17,7 @@ _TIFF = re.compile(
     r"(?P<hkl>[^_]+)_(?P<det>haadf|abf|bf)(?P<blur>(?:_[\d-]+)?)\.tif$"
 )
 
-_COLS = ["tiff_path", "toml_path", "sg", "hkl", "tilt_a", "tilt_b", "detector",
+_COLS = ["tiff_path", "source", "toml_path", "sg", "hkl", "tilt_a", "tilt_b", "detector",
          "scan_s", "thickness", "borders", "phonons", "fph_sigma", "blur_sigma",
          "is_fph", "matched_naming"]
 
@@ -38,24 +38,29 @@ def _toml_meta(path):
 
 
 def build_manifest(folder):
+    # walk the whole tree so one root covering several run folders yields one manifest;
+    # source = the frame's dir relative to the root (groups the otherwise-identical frames).
     rows, skipped = [], []
-    for name in sorted(os.listdir(folder)):
-        if not name.lower().endswith((".tif", ".tiff")):
-            continue
-        m = _TIFF.match(name)
-        if not m:
-            skipped.append(name)
-            continue
-        toml_path = os.path.join(folder, f"{m['sg']}_{m['hkl']}_({m['ta']}, {m['tb']}).toml")
-        rows.append({
-            "tiff_path": os.path.join(folder, name),
-            "toml_path": toml_path if os.path.exists(toml_path) else "",
-            "sg": m["sg"], "hkl": m["hkl"],
-            "tilt_a": float(m["ta"]), "tilt_b": float(m["tb"]),
-            "detector": m["det"], "blur_sigma": _blur(m["blur"]),
-            "is_fph": bool(m["fph"]), "matched_naming": True,
-            **_toml_meta(toml_path),
-        })
+    for dirpath, dirnames, filenames in os.walk(folder):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if not name.lower().endswith((".tif", ".tiff")):
+                continue
+            m = _TIFF.match(name)
+            if not m:
+                skipped.append(os.path.join(dirpath, name))
+                continue
+            toml_path = os.path.join(dirpath, f"{m['sg']}_{m['hkl']}_({m['ta']}, {m['tb']}).toml")
+            rows.append({
+                "tiff_path": os.path.join(dirpath, name),
+                "source": os.path.relpath(dirpath, folder),
+                "toml_path": toml_path if os.path.exists(toml_path) else "",
+                "sg": m["sg"], "hkl": m["hkl"],
+                "tilt_a": float(m["ta"]), "tilt_b": float(m["tb"]),
+                "detector": m["det"], "blur_sigma": _blur(m["blur"]),
+                "is_fph": bool(m["fph"]), "matched_naming": True,
+                **_toml_meta(toml_path),
+            })
     return rows, skipped
 
 

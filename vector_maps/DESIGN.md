@@ -209,6 +209,10 @@ title = "Residual std"
 scale = 1000
 ```
 
+- **Manifest** — `vmap_manifest.py <root>` builds it by **recursively walking** the
+  tree, so one root spanning several run folders yields a single manifest; each row
+  carries a `source` column (its dir relative to the root) so otherwise-identical
+  frames (same `sg`/`hkl`/`tilt`) stay distinguishable in the one `lookup_augmented.csv`.
 - **`[filter]`** selects one parameter slice; the sweep reports the match count
   plus an unmatched-values sanity dump.
 - **`[fit]`** reuses the single-frame `fit.toml` per row (overriding only `io`),
