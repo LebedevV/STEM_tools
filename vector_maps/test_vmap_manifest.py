@@ -59,6 +59,20 @@ def test_toml_sidecar_resolved_per_subfolder():
     assert r["scan_s"] == 50.0 and r["phonons"] == 8 and r["toml_path"]
 
 
+def test_manifest_requires_exactly_one_source():
+    # batch.toml [manifest]: exactly one of root (walk a tree) / path (pre-built CSV)
+    import pydantic
+    from vmap_config import Manifest
+    assert Manifest(root="some/tree").root == "some/tree"
+    assert Manifest(path="manifest.csv").path == "manifest.csv"
+    for bad in ({}, {"root": "t", "path": "m.csv"}):
+        try:
+            Manifest(**bad)
+        except pydantic.ValidationError:
+            continue
+        raise AssertionError(f"expected ValidationError for {bad}")
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_") and callable(_fn):
