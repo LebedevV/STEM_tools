@@ -392,7 +392,7 @@ def detect_columns(
 		'Ig_std': a_std
 	})
 	
-	df.to_csv(csv_path, index=False)
+	df.to_csv(csv_path, index=False, float_format="%.8g")
 	
 	
 if __name__ == "__main__":
