@@ -19,6 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from vmap_config import AppConfig, load_batch
+from vmap_manifest import build_manifest
 import vmap_run
 
 
@@ -131,9 +132,19 @@ def _plot_map(aug, spec, outdir):
 
 
 def sweep(bc):
-    df = pd.read_csv(bc.manifest.path)
+    if bc.manifest.root:
+        rows, skipped = build_manifest(bc.manifest.root)
+        if not rows:
+            print(f"no naming-matched tiffs under {bc.manifest.root} (skipped {len(skipped)})")
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        outdir = os.path.abspath(bc.manifest.root)
+        print(f"manifest: {len(df)} frames under {bc.manifest.root}"
+              + (f"; skipped {len(skipped)} non-matching tiff(s)" if skipped else ""))
+    else:
+        df = pd.read_csv(bc.manifest.path)
+        outdir = os.path.dirname(os.path.abspath(bc.manifest.path))
     sel = _select(df, bc.filter)
-    outdir = os.path.dirname(os.path.abspath(bc.manifest.path))
     print(f"Matches: {len(sel)}")
     if len(sel) == 0:
         for c in bc.filter:

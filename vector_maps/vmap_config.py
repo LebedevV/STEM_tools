@@ -7,7 +7,7 @@ __license__ = "GPL-v3"
 import tomllib
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Io(BaseModel):
@@ -133,7 +133,14 @@ def load_config(path) -> AppConfig:
 
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    path: str
+    root: Optional[str] = None    # recursively walk this tree -> build the manifest in-process
+    path: Optional[str] = None    # ...or point at a pre-built manifest CSV
+
+    @model_validator(mode="after")
+    def _one_source(self):
+        if bool(self.root) == bool(self.path):
+            raise ValueError("manifest: set exactly one of 'root' (walk a tree) or 'path' (pre-built CSV)")
+        return self
 
 
 class FitRef(BaseModel):

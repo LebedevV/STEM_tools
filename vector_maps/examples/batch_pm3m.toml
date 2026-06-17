@@ -1,9 +1,9 @@
 # Batch analysis of the Pm3m hkl-110 tilt series (abtem out_full).
-#   build the manifest:  python vmap_manifest.py 10/out_full
-#   run the sweep:       python vmap_sweep.py --config examples/batch_pm3m.toml
+#   run the sweep:  python vmap_sweep.py --config examples/batch_pm3m.toml
+#   (root is walked recursively in-process; or pre-build with `vmap_manifest.py <root>` and set path=)
 
 [manifest]
-path = "10/out_full/manifest.csv"   # produced by vmap_manifest.py
+root = "10/out_full"   # walked recursively -> one manifest spanning the tree
 
 [filter]                            # select the phonon-averaged HAADF, 0.25-blur slice
 detector   = "haadf"
