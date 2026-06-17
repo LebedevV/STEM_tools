@@ -1,3 +1,8 @@
+#!/usr/bin/env python3.11
+# -*- coding: utf-8 -*-
+__author__ = "Vasily A. Lebedev"
+__license__ = "GPL-v3"
+
 import os
 from pathlib import Path
 

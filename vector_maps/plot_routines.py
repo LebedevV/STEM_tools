@@ -155,7 +155,7 @@ def plot_violin(fname_save,labels,df):
 	plt.close('all')
 	
 	
-def plot_quiver(fname_save,fin_lat,vdiff_xy,ang,vec_scale,hd_w=2,units_v='$1 \AA$',ell=False,calib=None,df=None):
+def plot_quiver(fname_save,fin_lat,vdiff_xy,ang,vec_scale,hd_w=2,units_v='$1 \\AA$',ell=False,calib=None,df=None):
 	ref_angle = 0#np.pi/4
 	vx = [i for i,j in fin_lat]
 	vy = [j for i,j in fin_lat]
@@ -330,7 +330,7 @@ def plot_stats_rep(vdist,fname_save,ang=False,ang_weights=None):
 		ax.plot(gx,st.lognorm.pdf(gx,q[0],q[1],q[2]))
 	
 		q=n.tolist()
-		ax.text(mid[q.index(max(n))]+max(mid)/3,max(n)*.8,'$d_{mean}$='+str(ddd)+'$\pm$'+str(dd)+' pm', fontsize=16)
+		ax.text(mid[q.index(max(n))]+max(mid)/3,max(n)*.8,'$d_{mean}$='+str(ddd)+'$\\pm$'+str(dd)+' pm', fontsize=16)
 		ax.text(mid[q.index(max(n))]+max(mid)/3,max(n)*.95,'N = '+str(len(a)), fontsize=16)
 
 	plt.subplots_adjust(right=0.95, left=0.15, top=0.92, bottom=0.18)
@@ -348,7 +348,7 @@ def plot_stats_rep(vdist,fname_save,ang=False,ang_weights=None):
 	[ax.spines[i].set_visible(False) for i in ["top","left","right"]]
 	
 	if ang:
-		plt.xlabel("Direction, $^{\circ}$")	
+		plt.xlabel("Direction, $^{\\circ}$")
 	else:
 		plt.xlabel("Residual distance, pm")
 	plt.ylabel("Occurence")
@@ -362,4 +362,4 @@ def plot_stats_rep(vdist,fname_save,ang=False,ang_weights=None):
 	plt.close('all')
 	
 	if not ang:
-		return '$d_{mean}$='+str(ddd)+'$\pm$'+str(dd)+' pm'
+		return '$d_{mean}$='+str(ddd)+'$\\pm$'+str(dd)+' pm'

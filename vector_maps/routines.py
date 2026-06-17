@@ -290,21 +290,21 @@ def plot_output_page(fname,folder,full_df=None):
 		av_dist = df.loc['residual_in_pm','0']
 		correct_dist = True
 	except KeyError:
-		av_dist = df.loc['std'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' ')).to_numpy()[0]
+		av_dist = df.loc['std'].apply(lambda x: np.array(x.strip('[]').split(), dtype=float)).to_numpy()[0]
 		av_dist = np.sqrt(sum(av_dist**2))*1000
 		correct_dist = False
 		
 	at_num = df.loc['atoms_used','0']
-	lat_par = df.loc['param'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' ')).to_numpy()[0]
+	lat_par = df.loc['param'].apply(lambda x: np.array(x.strip('[]').split(), dtype=float)).to_numpy()[0]
 	lat_a = np.round(lat_par[0]*10,2)
 	lat_b = np.round(lat_par[1]*10,2)
 	lat_g = np.round(lat_par[2],1)
 
 
 	txt_label = "N = " + str(at_num) +"\n"
-	txt_label += "a = " + str(lat_a) +"$\AA$ \n"
-	txt_label += "b = " + str(lat_b) +"$\AA$ \n"
-	txt_label += "$\gamma $ = " + str(lat_g) +"$^{\circ}$ \n"
+	txt_label += "a = " + str(lat_a) +"$\\AA$ \n"
+	txt_label += "b = " + str(lat_b) +"$\\AA$ \n"
+	txt_label += "$\\gamma $ = " + str(lat_g) +"$^{\\circ}$ \n"
 	
 	parent_dir = Path(folder).parent
 
@@ -383,9 +383,9 @@ def plot_output_page(fname,folder,full_df=None):
 	
 	# Overlay text on one image (here, on 'e')
 	if correct_dist:
-		ttt = "$| \delta | = $"+str(np.round(float(av_dist),1))+'pm'
+		ttt = "$| \\delta | = $"+str(np.round(float(av_dist),1))+'pm'
 	else:
-		ttt = "$| \Delta d | = $"+str(np.round(float(av_dist),1))+'pm'
+		ttt = "$| \\Delta d | = $"+str(np.round(float(av_dist),1))+'pm'
 	ax_e.text(
 		0.6, 0.9, ttt,
 		transform=ax_e.transAxes,
@@ -407,7 +407,7 @@ def plot_output_page_diff(fname,folder):
 	files = [folder+sf + '_vmap_rotated.png',
 		folder+sf + '_vmap_proj_a.png',
 		folder+sf + '_vmap_proj_a90.png']
-	titles = ["Vector map", "Components $\parallel ~ a$", "Components $\perp ~ a$"]
+	titles = ["Vector map", "Components $\\parallel ~ a$", "Components $\\perp ~ a$"]
 
 	images = [load_and_trim_cv2(f) for f in files]
 

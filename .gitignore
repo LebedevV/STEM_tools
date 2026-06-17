@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.ruff_cache/
+*.egg-info/
+
+# Archives and papers — keep out of the repo (large / copyrighted)
+*.zip
+*.pdf
+
+# Root-level scratch data dirs
+/test/
+/test2/
+/test3/
+
+# vector_maps local scratch — example data belongs under examples/data/, not the package root
+/vector_maps/10/
+/vector_maps/fixed/
+/vector_maps/*.tif
+/vector_maps/*.tiff
+/vector_maps/*.png
+/vector_maps/*.csv
+# untracked legacy monoliths (superseded by the modular pipeline)
+/vector_maps/index_all3.py
+/vector_maps/fit_lattice_v11_test.py
+/vector_maps/fit_lattice_v13.py
