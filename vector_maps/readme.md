@@ -1,34 +1,60 @@
-This code allows one to locate atomic columns positions on HAADF STEM images and to refine it against the idealized lattice with different degrees of freedom.
+# vector_maps
 
-2D Bravais lattice is in use here, with allowance of arbitrary cell and motif
+Locate atomic-column positions on HAADF STEM images and refine them against an
+idealized 2D Bravais lattice (arbitrary cell + motif) with per-degree-of-freedom
+control, producing residual vector maps and statistics.
 
-The algorithm of usage is the following:
- - Using the 'detect_columns' notebook - which is basically a wrapper for atomap - one can detect atomic columns positions, intensities and ellipticity for a given HAADF STEM image (TIFF files are default). This data exported as a numpy array
- - With the external calibrations provided (ratio between number of pixels and frame size is expected) one may call routines from fit_lattice, specifying starting lattice parameters
- - the theoretical lattice is then created and paired with observed one
- - the lattice parameters which are allowed to be flexible are refined to minimize the average distance between theoretical and observed lattices
- - outcome is a few vector plots of differences, some statistical data, and a number of csv files with refined parameters, ratios, and minimized value of distance
+## Workflow
 
-Known issues and TODO:
- - [todo] the best match between theor and obs is preserved in the case of options
- - [major][done] revisit the handling of parameters to allow equations
- - code cleanup is required
- - more comments needed
- - re-fit by 2D gaussian call from 'fit_lattice' is currently not working properly, to fix
- - support for simultaneous imaging (BF/DF) to be considered
- - starting lattice parameters can be estimated by FFT
- - residuals of 2D gauss fit to be visualized
- - average unit cell picture to be rendered
- - add auto-assessment for max/min i,j values (number of unit cells in use)
- - (?) use diffpy to handle fraq coordinates
- - use a dedicated min for negative distances
- - check extra shift
- - double-check rotations for images and vmaps
- - (done; keep track) double-check kernel4 function, which computes difference on the basis of 4 nearest neighbours
- - (?) dask for pandas
- 
-Acknowledgements:
- - Lewys Jones for ideas and supervision
- - Project SFI/21/US/3785 for financial support
+1. **Detect columns.** `detect_columns` (the `detect_columns.ipynb` notebook or
+   `detect_columns.py`, both wrappers around atomap) finds column positions,
+   intensities, and ellipticities for a frame and writes a 14-column
+   `<frame>_xyI.csv`.
+2. **Fit the lattice.** Describe the cell, motif, calibration, and a sequence of
+   refinement passes in a TOML config, then run `vmap_run.py`. The theoretical
+   lattice is built, paired with the observed columns, and the free parameters are
+   refined to minimize the mean column-to-column distance. Motif atoms can be tied
+   together with equations (e.g. a dumbbell as a polar `extra_pars` vector).
+3. **Read the output.** Each saved pass writes residual vector maps, histograms,
+   and CSVs of the refined parameters, ratios, and the minimized distance.
 
-Part of the code has been created with AI assistance (OpenAI GPT-5) and manually reviewed
+See `DESIGN.md` for the full config schema and pass semantics.
+
+## Examples
+
+`examples/` has ready-to-edit configs; point each `[io]` at your own frame and its
+`<fname>_xyI.csv` (detected columns), then run from this directory:
+
+```bash
+# TaTe2 -- one Ta + two Te sublattices; set [io] to your frame + _xyI.csv
+python vmap_run.py --config examples/fit_tate2.toml --no-gui
+
+# Si<110> dumbbell -- staged lattice -> dumbbell -> free; point [io] at your own frame
+python vmap_run.py --config examples/fit_si.toml --no-gui
+
+# Batch sweep over an abtem tilt series (one fit per frame, then maps vs tilt).
+# Needs the simulation out_full tree (not shipped; generate it with abtem_run):
+python vmap_sweep.py --config examples/batch_pm3m.toml
+```
+
+`fit_pm3m.toml` is the placeholder per-frame template the batch sweep fills in per row.
+
+## Tests
+
+```bash
+python -m pytest -q        # or run a single file standalone: python test_routines.py
+```
+
+## Known issues / TODO
+
+- ambiguous observed/theoretical column matches keep the closest candidate; a global assignment would be better
+- auto-assessment of the i,j lattice-index range (number of unit cells in use)
+- simultaneous BF/DF imaging support
+- a dedicated minimizer term for negative distances
+
+## Acknowledgements
+
+- Lewys Jones for ideas and supervision
+- Project SFI/21/US/3785 for financial support
+
+Part of the code has been created with AI assistance (OpenAI GPT-5) and manually reviewed.

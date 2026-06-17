@@ -1,4 +1,6 @@
-# TaTe2 — one Ta + two Te sublattices (mirrors the fit_lattice_TaTe2 driver)
+# TaTe2 — one Ta + two Te sublattices (mirrors the legacy fit_lattice_TaTe2 driver).
+# Point [io] at your own frame + its <fname>_xyI.csv (detected columns).
+#   python vmap_run.py --config examples/fit_tate2.toml --no-gui
 [io]
 folder = "./"
 fname  = "fph_TaTe2_(0.0, 0.0)_010_haadf_0-25"
