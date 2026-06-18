@@ -400,6 +400,53 @@ def ab_shift_vector(lat_params, motif, extra_pars, shift_ab):
 	return float(pb[0] - pa[0]), float(pb[1] - pa[1])
 
 
+def _review_obs(image, obs_px, calib, title=""):
+	"""Show candidate observed points over the image (matplotlib pan/zoom) with
+	Accept/Reject buttons; return True if accepted. Shared by the GUI redetect buttons.
+	Interactive -- manual-verify only.
+	"""
+	H, W = image.shape[:2]
+	fig, ax = plt.subplots(figsize=(7, 6))
+	fig.subplots_adjust(bottom=0.15)
+	ax.imshow(image, extent=[0, W * calib, H * calib, 0], origin='upper')
+	ax.scatter(obs_px[:, 0] * calib, obs_px[:, 1] * calib, marker='o', s=30,
+		   edgecolors='r', facecolors='none', linewidths=1.5)
+	ax.set_title(title)
+	out = {'ok': False}
+	b_a = Button(fig.add_axes([0.59, 0.02, 0.17, 0.07]), 'Accept')
+	b_r = Button(fig.add_axes([0.78, 0.02, 0.17, 0.07]), 'Reject')
+	b_a.on_clicked(lambda e: (out.__setitem__('ok', True), plt.close(fig)))
+	b_r.on_clicked(lambda e: plt.close(fig))
+	plt.show()
+	return out['ok']
+
+
+def redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars, ij, ptonn=0.6, out_suffix="_redetect"):
+	"""Seed atomap with the current lattice and re-fit the columns onto it.
+
+	Builds the theoretical sites from (lat_params, motif), cropped to the frame, writes
+	them as a pixel-space seed CSV, runs detect_columns(start_csv=...) to refine, and
+	returns the path of the new <stem><out_suffix>_xyI.csv. The GUI 'redetect (lattice
+	seed)' button wraps this. Image-dependent -- verified on a real frame, not unit-tested.
+	"""
+	from detect_columns import detect_columns
+	folder = os.path.join(str(folder), "")
+	stem = os.path.splitext(os.path.basename(fname))[0]
+	img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
+	H, W = img.shape[:2]
+	param_vec = dicts_to_vector(lat_params, motif, extra_pars)[0]
+	# crop the theoretical sites to the frame extent (nm) so the atomap seeds stay in-image
+	theor_nm, _, _ = get_coords_from_ij(ij, param_vec, (W * calib, H * calib), lat_params, motif, extra_pars, crop=True)
+	seed_px = np.asarray(theor_nm) / calib          # detected coords are pixels; theory is nm
+	inb = (seed_px[:, 0] >= 0) & (seed_px[:, 0] < W) & (seed_px[:, 1] >= 0) & (seed_px[:, 1] < H)
+	seed_px = seed_px[inb]                           # atomap can't seed outside the image
+	seed_path = folder + stem + out_suffix + "_seed.csv"
+	pd.DataFrame({"x_obs0": seed_px[:, 0], "y_obs0": seed_px[:, 1]}).to_csv(seed_path, index=False)
+	detect_columns(fname=fname, folder=folder, imsize=(int(W), int(H)), sep=10,
+		       start_csv=seed_path, interactive=False, ptonn=ptonn, out_suffix=out_suffix)
+	return folder + stem + out_suffix + "_xyI.csv"
+
+
 def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall_zero=False,show_initial_spots=False,vec_scale=0.05,
 			do_fit=True,relative_to=None,kernel=4,shift_ab=None,do_fft_align=False,do_fft_prefit=False,sub_area=None,max_dist=0,export_sublattice_xy=False,dataset_fname=None):
 	if extra_pars is None:
@@ -449,7 +496,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 		fig.subplots_adjust(bottom=0.27) 
 		
 		ax.set_aspect('equal')
-		ax.scatter(observed_xy[:,0],observed_xy[:,1], marker='o',s=50, edgecolors="blue", facecolors="none", linewidths=2)
+		sc_obs = ax.scatter(observed_xy[:,0],observed_xy[:,1], marker='o',s=50, edgecolors="blue", facecolors="none", linewidths=2)
 		sc0 = ax.scatter(zeros[:,0],zeros[:,1], marker='o',s=50, edgecolors="k", facecolors="none", linewidths=3)
 		
 		sc = ax.scatter(th_relevant[:,0],th_relevant[:,1], marker='o',s=50, color='r')
@@ -546,6 +593,25 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 		ax_ffta = fig.add_axes([0.65, 0.15, 0.10, 0.08])
 		btn_ffta = Button(ax_ffta, 'FFT abg')
 		btn_ffta.on_clicked(_fft_clicked(True))
+
+		# redetect the observed columns using the current lattice as the atomap seed,
+		# review the proposal, and (on accept) overwrite the obs in place -- the post-GUI
+		# fit then uses it. Interactive -- manual-verify only.
+		def _redetect_clicked(evt):
+			nonlocal dataset
+			new_csv = redetect_from_lattice(folder, fname, calib, lat_params, motif,
+							extra_pars, gen_ij((-170, 170)), ptonn=0.6)
+			new_obs = pd.read_csv(new_csv)
+			xy = new_obs[["x_obs0", "y_obs0"]].to_numpy(float)
+			if _review_obs(_im, xy, calib, "redetect (lattice seed) -- accept overwrites the obs"):
+				dataset = new_obs
+				new_obs.to_csv(os.path.join(folder, os.path.splitext(fname)[0] + "_xyI.csv"), index=False)
+				sc_obs.set_offsets(xy * calib)
+				update()
+
+		ax_redet = fig.add_axes([0.76, 0.25, 0.10, 0.08])
+		btn_redet = Button(ax_redet, 'redetect')
+		btn_redet.on_clicked(_redetect_clicked)
 
 		plt.show()
 		print('Params',lat_params)
