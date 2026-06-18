@@ -7,6 +7,7 @@ import os
 import numpy as np
 import atomap.api as am
 import scipy
+import scipy.ndimage
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
 from scipy.spatial import cKDTree
@@ -16,7 +17,7 @@ from routines import *
 from plot_routines import *
 from dicts_handling import *
 
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Slider, Button, CheckButtons
 
 max_lim=(1000,1000)
 
@@ -400,6 +401,104 @@ def ab_shift_vector(lat_params, motif, extra_pars, shift_ab):
 	return float(pb[0] - pa[0]), float(pb[1] - pa[1])
 
 
+def _review_obs(image, obs_px, calib, title=""):
+	"""Show candidate observed points over the image (matplotlib pan/zoom) with
+	Accept/Reject buttons; return True if accepted. Shared by the GUI redetect buttons.
+	Interactive -- manual-verify only.
+	"""
+	H, W = image.shape[:2]
+	fig, ax = plt.subplots(figsize=(7, 6))
+	fig.subplots_adjust(bottom=0.15)
+	ax.imshow(image, extent=[0, W * calib, H * calib, 0], origin='upper')
+	ax.scatter(obs_px[:, 0] * calib, obs_px[:, 1] * calib, marker='o', s=30,
+		   edgecolors='r', facecolors='none', linewidths=1.5)
+	ax.set_title(title)
+	out = {'ok': False}
+	b_a = Button(fig.add_axes([0.59, 0.02, 0.17, 0.07]), 'Accept')
+	b_r = Button(fig.add_axes([0.78, 0.02, 0.17, 0.07]), 'Reject')
+	b_a.on_clicked(lambda e: (out.__setitem__('ok', True), plt.close(fig)))
+	b_r.on_clicked(lambda e: plt.close(fig))
+	plt.show()
+	return out['ok']
+
+
+def redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars, ij, ptonn=0.6, out_suffix="_redetect"):
+	"""Seed atomap with the current lattice and re-fit the columns onto it.
+
+	Builds the theoretical sites from (lat_params, motif), cropped to the frame, writes
+	them as a pixel-space seed CSV, runs detect_columns(start_csv=...) to refine, and
+	returns the path of the new <stem><out_suffix>_xyI.csv. The GUI 'redetect (lattice
+	seed)' button wraps this. Image-dependent -- verified on a real frame, not unit-tested.
+	"""
+	from detect_columns import detect_columns
+	folder = os.path.join(str(folder), "")
+	stem = os.path.splitext(os.path.basename(fname))[0]
+	img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
+	H, W = img.shape[:2]
+	param_vec = dicts_to_vector(lat_params, motif, extra_pars)[0]
+	# crop the theoretical sites to the frame extent (nm) so the atomap seeds stay in-image
+	theor_nm, _, _ = get_coords_from_ij(ij, param_vec, (W * calib, H * calib), lat_params, motif, extra_pars, crop=True)
+	seed_px = np.asarray(theor_nm) / calib          # detected coords are pixels; theory is nm
+	inb = (seed_px[:, 0] >= 0) & (seed_px[:, 0] < W) & (seed_px[:, 1] >= 0) & (seed_px[:, 1] < H)
+	seed_px = seed_px[inb]                           # atomap can't seed outside the image
+	seed_path = folder + stem + out_suffix + "_seed.csv"
+	pd.DataFrame({"x_obs0": seed_px[:, 0], "y_obs0": seed_px[:, 1]}).to_csv(seed_path, index=False)
+	detect_columns(fname=fname, folder=folder, imsize=(int(W), int(H)), sep=10,
+		       start_csv=seed_path, interactive=False, ptonn=ptonn, out_suffix=out_suffix)
+	return folder + stem + out_suffix + "_xyI.csv"
+
+
+def _redetect_scratch(image, folder, fname, calib, out_suffix="_scratch"):
+	"""From-scratch detect window: sep/thr/sigma sliders + pca/subtract-bkg checkboxes,
+	a gaussian view-blur, a Detect button (runs detect_columns headless), and Accept/Reject.
+	Returns the accepted obs DataFrame (pixel coords) or None. The 'detect new' GUI button
+	wraps this; sigma blurs the view only (detect_columns detects on the unblurred frame).
+	Interactive -- manual-verify only.
+	"""
+	from detect_columns import detect_columns
+	folder = os.path.join(str(folder), "")
+	stem = os.path.splitext(os.path.basename(fname))[0]
+	H, W = image.shape[:2]
+	fig, ax = plt.subplots(figsize=(8, 7))
+	fig.subplots_adjust(left=0.28, bottom=0.28)
+	im_artist = ax.imshow(image, extent=[0, W * calib, H * calib, 0], origin='upper')
+	sc = ax.scatter(np.empty(0), np.empty(0), marker='o', s=30,
+			edgecolors='r', facecolors='none', linewidths=1.5)
+
+	s_sep = Slider(fig.add_axes([0.08, 0.86, 0.14, 0.03]), 'sep', 2, 40, valinit=10, valstep=1)
+	s_thr = Slider(fig.add_axes([0.08, 0.80, 0.14, 0.03]), 'thr', 0.0, 1.0, valinit=0.1)
+	s_sig = Slider(fig.add_axes([0.08, 0.74, 0.14, 0.03]), 'sigma', 0.0, 5.0, valinit=1.0)
+	chk = CheckButtons(fig.add_axes([0.04, 0.50, 0.20, 0.16]), ['pca', 'subtract bkg'], [False, True])
+
+	def _blur(_=None):
+		s = s_sig.val
+		im_artist.set_data(scipy.ndimage.gaussian_filter(image, sigma=s) if s > 0 else image)
+		fig.canvas.draw_idle()
+	s_sig.on_changed(_blur)
+
+	state = {'obs': None, 'ok': False}
+
+	def _detect(evt):
+		pca, sub = chk.get_status()
+		detect_columns(fname=fname, folder=folder, imsize=(int(W), int(H)),
+			       sep=int(s_sep.val), sigma1=s_sig.val, thr=s_thr.val, pca=pca,
+			       subtract_background=sub, ptonn=0.6, interactive=False, out_suffix=out_suffix)
+		df = pd.read_csv(folder + stem + out_suffix + "_xyI.csv")
+		state['obs'] = df
+		sc.set_offsets(df[["x_obs0", "y_obs0"]].to_numpy(float) * calib)
+		ax.set_title("detected %d columns -- Accept to use" % len(df))
+		fig.canvas.draw_idle()
+
+	b_det = Button(fig.add_axes([0.04, 0.36, 0.20, 0.06]), 'Detect')
+	b_acc = Button(fig.add_axes([0.04, 0.20, 0.09, 0.06]), 'Accept')
+	b_rej = Button(fig.add_axes([0.15, 0.20, 0.09, 0.06]), 'Reject')
+	b_det.on_clicked(_detect)
+	b_acc.on_clicked(lambda e: (state.__setitem__('ok', True), plt.close(fig)))
+	b_rej.on_clicked(lambda e: plt.close(fig))
+	plt.show()
+	return state['obs'] if state['ok'] else None
+
+
 def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall_zero=False,show_initial_spots=False,vec_scale=0.05,
 			do_fit=True,relative_to=None,kernel=4,shift_ab=None,do_fft_align=False,do_fft_prefit=False,sub_area=None,max_dist=0,export_sublattice_xy=False,dataset_fname=None):
 	if extra_pars is None:
@@ -449,7 +548,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 		fig.subplots_adjust(bottom=0.27) 
 		
 		ax.set_aspect('equal')
-		ax.scatter(observed_xy[:,0],observed_xy[:,1], marker='o',s=50, edgecolors="blue", facecolors="none", linewidths=2)
+		sc_obs = ax.scatter(observed_xy[:,0],observed_xy[:,1], marker='o',s=50, edgecolors="blue", facecolors="none", linewidths=2)
 		sc0 = ax.scatter(zeros[:,0],zeros[:,1], marker='o',s=50, edgecolors="k", facecolors="none", linewidths=3)
 		
 		sc = ax.scatter(th_relevant[:,0],th_relevant[:,1], marker='o',s=50, color='r')
@@ -546,6 +645,40 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 		ax_ffta = fig.add_axes([0.65, 0.15, 0.10, 0.08])
 		btn_ffta = Button(ax_ffta, 'FFT abg')
 		btn_ffta.on_clicked(_fft_clicked(True))
+
+		# redetect the observed columns using the current lattice as the atomap seed,
+		# review the proposal, and (on accept) overwrite the obs in place -- the post-GUI
+		# fit then uses it. Interactive -- manual-verify only.
+		def _redetect_clicked(evt):
+			nonlocal dataset
+			new_csv = redetect_from_lattice(folder, fname, calib, lat_params, motif,
+							extra_pars, gen_ij((-170, 170)), ptonn=0.6)
+			new_obs = pd.read_csv(new_csv)
+			xy = new_obs[["x_obs0", "y_obs0"]].to_numpy(float)
+			if _review_obs(_im, xy, calib, "redetect (lattice seed) -- accept overwrites the obs"):
+				dataset = new_obs
+				new_obs.to_csv(os.path.join(folder, os.path.splitext(fname)[0] + "_xyI.csv"), index=False)
+				sc_obs.set_offsets(xy * calib)
+				update()
+
+		ax_redet = fig.add_axes([0.76, 0.25, 0.10, 0.08])
+		btn_redet = Button(ax_redet, 'redetect')
+		btn_redet.on_clicked(_redetect_clicked)
+
+		# detect the columns from scratch in a separate window (sliders / checkboxes like
+		# detect_columns); accept overwrites the obs in place, same as 'redetect'.
+		def _redetect_scratch_clicked(evt):
+			nonlocal dataset
+			new_obs = _redetect_scratch(_im, folder, fname, calib)
+			if new_obs is not None:
+				dataset = new_obs
+				new_obs.to_csv(os.path.join(folder, os.path.splitext(fname)[0] + "_xyI.csv"), index=False)
+				sc_obs.set_offsets(new_obs[["x_obs0", "y_obs0"]].to_numpy(float) * calib)
+				update()
+
+		ax_redet2 = fig.add_axes([0.75, 0.34, 0.12, 0.08])
+		btn_redet2 = Button(ax_redet2, 'detect new')
+		btn_redet2.on_clicked(_redetect_scratch_clicked)
 
 		plt.show()
 		print('Params',lat_params)
