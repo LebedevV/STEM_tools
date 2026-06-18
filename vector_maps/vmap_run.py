@@ -163,11 +163,28 @@ def _merge_body(parent, body):
     return parent.model_copy(update={**overrides, "expand": None, "body": []})
 
 
-def _run_detect(d, folder, fname):
-    # PZT-style re-detection: one chained detect pass per ptonn entry (each on the
-    # prior residual; ptonn = percent_to_nn fit window), merged into one
-    # <fname>_sub_AB dataset. Mirrors index_all3 / fit_lattice_PZT.
-    # UNVERIFIED: needs detect_columns on the path + image data to exercise.
+def _dedupe_xy(df, radius):
+    # Drop cross-pass re-detections of the same column: within one pass atomap keeps
+    # peaks >= the detection separation apart, so any pair closer than `radius` px is one
+    # column found twice on a later residual. Keeps the earlier-pass row of each cluster.
+    from scipy.spatial import cKDTree
+    if len(df) < 2 or radius <= 0:
+        return df
+    coords = df[["x_obs0", "y_obs0"]].to_numpy(float)
+    drop = set()
+    for i, j in sorted(cKDTree(coords).query_pairs(r=radius)):
+        if i not in drop:
+            drop.add(j)
+    if not drop:
+        return df
+    return df.drop(index=df.index[sorted(drop)]).reset_index(drop=True)
+
+
+def _run_detect(d, folder, fname, name):
+    # PZT-style re-detection: one chained detect pass per ptonn entry (each on the prior
+    # residual; ptonn = percent_to_nn fit window). The passes are concatenated, deduped,
+    # and written to the save_as stem; the original <fname>_xyI.csv is left untouched.
+    # Mirrors index_all3 / fit_lattice_PZT.
     from detect_columns import detect_columns
     parts, source = [], None
     for i, pt in enumerate(d.ptonn):
@@ -181,17 +198,15 @@ def _run_detect(d, folder, fname):
         )
         parts.append(os.path.join(folder, f"{fname}{suffix}_xyI.csv"))
         source = f"{fname}{suffix}_2DG_ptnn_{pt}_diff2.tif"
-    if not d.merge:
-        return None
     frames = []
     for j, path in enumerate(parts):
         df = pd.read_csv(path)
         df["sub_id"] = chr(ord("A") + j)
         frames.append(df)
-    merged = f"{fname}_sub_AB"
-    pd.concat(frames, ignore_index=True, sort=False).to_csv(
-        os.path.join(folder, f"{merged}_xyI.csv"), index=False, float_format="%.8g")
-    return merged
+    merged = _dedupe_xy(pd.concat(frames, ignore_index=True, sort=False), radius=0.5 * d.sep)
+    stem = d.save_as.format(fname=fname, name=name)
+    merged.to_csv(os.path.join(folder, f"{stem}_xyI.csv"), index=False, float_format="%.8g")
+    return stem
 
 
 def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
@@ -209,10 +224,10 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
 
     meta = None
     gui_opened = False
-    dataset = None                      # None -> use <fname>; set after a detect+merge
+    dataset = None                      # None -> use <fname>; set to the save_as stem by a detect pass
     for p in cfg.run.passes:
         if p.detect is not None:
-            dataset = _run_detect(p.detect, folder, fname)
+            dataset = _run_detect(p.detect, folder, fname, p.name)
             print(f"[{p.name}] detect -> dataset = {dataset}")
             continue
         if p.expand is not None:
