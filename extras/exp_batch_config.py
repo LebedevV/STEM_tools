@@ -58,7 +58,6 @@ class Detect(BaseModel):
     ptonn: float = 0.6
     pca: bool = True
     subtract_background: bool = True
-    imsize: Optional[list[float]] = None   # nm; if None, derived per-frame from the catalog
 
 
 class ExtrasRun(BaseModel):

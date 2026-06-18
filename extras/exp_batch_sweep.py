@@ -3,17 +3,21 @@
 # Experimental batch: register raw stacks, then detect atom columns per frame.
 #   python exp_batch_sweep.py --config examples/batch_exp.toml
 # Reuses extras/batch.py (alignment) + vector_maps/detect_columns (the _xyI.csv
-# producer). The align + detect steps need real stacks; the orchestration here is
-# unit-tested with _align/_detect stubbed (see test_exp_batch_sweep.py).
+# producer). Detection runs in pixels (calibration-free); the per-.dm3 sidecar
+# <name>_frame.txt is copied onto the aligned stem so a source="sidecar" fit gets
+# the nm/px (invariant under the alignment crop). The align + detect steps need
+# real stacks; the orchestration here is unit-tested with _align/_detect stubbed.
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
 import argparse
 import os
+import shutil
 import sys
 
 import numpy as np
 import pandas as pd
+import tifffile
 
 from exp_batch_config import load_batch_extras
 from exp_batch_manifest import build_manifest
@@ -42,11 +46,22 @@ def _select(df, flt):
     return df.loc[mask].copy()
 
 
-def _imsize(row, detect):
-    if detect.imsize is not None:
-        return list(detect.imsize)
-    px = float(row["pixel_size_nm"])              # field-of-view in nm = pixel size * pixels
-    return [px * float(row["nx"]), px * float(row["ny"])]
+def _pixel_imsize(aligned_path):
+    # the aligned frame's own pixel dims, in detect_columns' axis order
+    # (hyperspy axes_manager[0]=x=cols, [1]=y=rows == tiff shape reversed); passing
+    # these back as imsize makes the detection scale exactly 1 -> x_obs0 in pixels,
+    # which is what the fit expects (preprocess_dataset applies calib to pixels).
+    return tuple(int(n) for n in tifffile.imread(aligned_path).shape[::-1][:2])
+
+
+def _propagate_sidecar(folder, raw_stem, aligned_stem):
+    # nm/px survives the alignment crop, so copy the per-.dm3 <raw>_frame.txt sidecar
+    # onto the aligned stem; a source="sidecar" fit then reads the same calibration.
+    src = os.path.join(folder, f"{raw_stem}_frame.txt")
+    if not os.path.exists(src):
+        return False
+    shutil.copyfile(src, os.path.join(folder, f"{aligned_stem}_frame.txt"))
+    return True
 
 
 # --- heavy steps, factored out so the sweep is testable with these stubbed -------
@@ -58,11 +73,12 @@ def _align(raw, folder, stem, cfg):
     batch.alignment(s, folder, stem, NRA=cfg.align.nra, bin_factor=cfg.align.bin_factor)
 
 
-def _detect(aligned, folder, imsize, cfg):
+def _detect(aligned, folder, cfg):
     _ensure_vector_maps_on_path()
     from detect_columns import detect_columns
     detect_columns(
-        fname=aligned + ".tiff", folder=folder, imsize=imsize,
+        fname=aligned + ".tiff", folder=folder,
+        imsize=_pixel_imsize(os.path.join(folder, aligned + ".tiff")),
         sep=cfg.detect.sep, sigma1=cfg.detect.sigma1, thr=cfg.detect.thr,
         ptonn=cfg.detect.ptonn, pca=cfg.detect.pca,
         subtract_background=cfg.detect.subtract_background, interactive=False,
@@ -93,7 +109,10 @@ def _run_row(row, cfg):
     for _ in range(max(1, cfg.run.retries)):
         try:
             _align(raw, folder, stem, cfg)
-            _detect(aligned, folder, _imsize(row, cfg.detect), cfg)
+            if not _propagate_sidecar(folder, stem, aligned):
+                print(f"  WARN {stem}: no {stem}_frame.txt sidecar; a source='sidecar' "
+                      "fit will have no calibration for this frame")
+            _detect(aligned, folder, cfg)
             if cfg.run.chain_fit:
                 _chain_fit(cfg.run.chain_fit, folder, aligned)
             return {"raw_path": raw, "xyI_path": csv_path, "status": "ok"}
