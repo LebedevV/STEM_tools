@@ -109,17 +109,18 @@ point set carry forward. A step is either a **fit** or a **detect**.
 - **`add`** — introduce new motif atoms here; persist for later steps.
 - **`expand`** — growing-ROI loop (below).
 
-**Detect step** — re-detect + optional merge, for the interleaved flow:
+**Detect step** — re-detect, for the interleaved flow:
 
 ```toml
-{ name = "redetect", detect = { ptonn = [0.6, 0.4], merge = true, imsize = [5.0, 5.0] } }
+{ name = "redetect", detect = { ptonn = [0.6, 0.4], imsize = [5.0, 5.0] } }
 ```
 
 Wraps `detect_columns`: one detect pass per `ptonn` entry (the `percent_to_nn`
-fit window), each chained on the previous pass's residual; `merge = true` combines
-them into the `sub_AB`
-point set the next fit consumes, expressing **fit → re-detect → merge → re-fit**.
-`imsize` (nm) is required.
+fit window), each chained on the previous pass's residual. The passes are
+concatenated and deduped (a column re-found on a later residual is dropped),
+then written to `save_as` (default `{fname}_{name}` → `<frame>_<step>_xyI.csv`),
+which the next fit consumes — expressing **fit → re-detect → re-fit**. The
+original `<frame>_xyI.csv` is left untouched. `imsize` (nm) is required.
 
 ### `add` / `expand` examples
 
@@ -265,8 +266,8 @@ Concretely, one round (stages 2–6):
   seeded by the fit's A positions.
 - stage 5 — `detect_columns(ptonn=0.4, source_fname=…_A_rerun…diff2.tif,
   start_csv=csv_B)` — detect weak on the strong-subtracted residual, seeded.
-- merge — `concat(A, B)` → `…_sub_AB_xyI.csv`.
-- stage 6 — `run_fit_pipeline(dataset_fname="…_sub_AB")` — fit on the merge.
+- merge — `concat(A, B)`, deduped → the `save_as` stem `…_xyI.csv`.
+- stage 6 — `run_fit_pipeline(dataset_fname=<save_as>)` — fit on the merge.
 
 New primitives beyond phase 1:
 
@@ -279,8 +280,8 @@ New primitives beyond phase 1:
   Interactive only.
 - **C — intensity-scoped / masked detection.** `source_fname` (detect on the
   residual after the prior sublattice's model) does the scoping; `separation` /
-  `threshold` pick the columns. The phase-1 detect step already chains residuals
-  and merges; this scopes it by intensity.
+  `threshold` pick the columns. The phase-1 detect step already chains residuals,
+  merges and dedupes; this scopes it by intensity.
 
 Stage 4 (add the schema) reuses phase-1 primitives: a plot-only pass
 (`refine = false`) with `add` at guessed coords — no new construct.
