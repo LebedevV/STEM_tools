@@ -136,13 +136,16 @@ def _passthrough(p):
 
 
 def _run_pass(p, folder, fname, calib, lat_params, motif, extra_pars,
-              gui_master, refine_master, sub_area=None, dataset_fname=None):
+              gui_master, refine_master, sub_area=None, dataset_fname=None,
+              save_stem="{fname}_{name}"):
     if p.fit:
         _apply_fit(p.fit, lat_params, motif, extra_pars)
     for m in p.add:
         motif[m.label] = _atom_entry(m)
     sa = sub_area if sub_area is not None else p.sub_area
-    sf = p.name if p.save else None
+    # saved-pass folder carries the source frame name (configurable via run.save_stem),
+    # so different frames don't collide in a bare "<pass>/" dir.
+    sf = save_stem.format(fname=fname, name=p.name) if p.save else None
     meta, vec = refinement_run(
         folder, sf, fname, calib, lat_params, motif, extra_pars=extra_pars,
         show_initial_spots=(gui_master and p.gui), vec_scale=p.vec_scale,
@@ -221,13 +224,15 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
                     gui_opened = gui_opened or (gui_master and eff.gui)
                     meta = _run_pass(eff, folder, fname, cal, lat_params, motif,
                                      extra_pars, gui_master, refine_master,
-                                     sub_area=area, dataset_fname=dataset)
+                                     sub_area=area, dataset_fname=dataset,
+                                     save_stem=cfg.run.save_stem)
                     print(f"[{p.name} {ai + 1}/{len(areas)}] residual_in_pm = "
                           f"{meta.get('residual_in_pm') if meta else None}")
         else:
             gui_opened = gui_opened or (gui_master and p.gui)
             meta = _run_pass(p, folder, fname, cal, lat_params, motif,
-                             extra_pars, gui_master, refine_master, dataset_fname=dataset)
+                             extra_pars, gui_master, refine_master, dataset_fname=dataset,
+                             save_stem=cfg.run.save_stem)
             print(f"[{p.name}] residual_in_pm = {meta.get('residual_in_pm') if meta else None}")
 
     if seed_path and gui_opened:

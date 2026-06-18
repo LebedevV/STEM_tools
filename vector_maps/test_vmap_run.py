@@ -69,3 +69,28 @@ def test_example_si_config_round_trips():
 	# behavioural flags land as passthrough, not schema fields
 	assert vr._passthrough(cfg.run.passes[0]) == {"recall_zero": True}
 	assert vr._passthrough(cfg.run.passes[2]) == {"export_sublattice_xy": True}
+
+
+def test_save_folder_includes_fname(monkeypatch):
+	# the saved-pass folder uses run.save_stem -> "<fname>_<pass>" by default, so frames
+	# don't collide in a bare "<pass>/" dir; refinement_run is stubbed to capture sf.
+	captured = {}
+
+	def fake_run(folder, sf, fname, calib, *a, **k):
+		captured["sf"] = sf
+		return {}, None
+	monkeypatch.setattr(vr, "refinement_run", fake_run)
+	monkeypatch.setattr(vr, "unpack_to_dicts", lambda *a, **k: None)
+
+	vr._run_pass(Pass(name="free", save=True), "fld/", "myframe", 0.01, {}, {}, {},
+		     False, True, save_stem="{fname}_{name}")
+	assert captured["sf"] == "myframe_free"
+	# the old bare-pass naming stays available via the template
+	vr._run_pass(Pass(name="free", save=True), "fld/", "myframe", 0.01, {}, {}, {},
+		     False, True, save_stem="{name}")
+	assert captured["sf"] == "free"
+	# a non-saving pass writes nowhere
+	captured["sf"] = "untouched"
+	vr._run_pass(Pass(name="prefit", save=False), "fld/", "myframe", 0.01, {}, {}, {},
+		     False, True)
+	assert captured["sf"] is None

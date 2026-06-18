@@ -236,22 +236,36 @@ def imshow_no_axes(ax, im):
 	ax.imshow(im)
 	ax.set_axis_off()
 
+
+def _panel_image(folder, fname):
+	# panel slot "a": the frame preview <fname>.png (one level up from the save
+	# folder) if present, else the processing TIFF normalized for display, so the
+	# panel still renders when no png was made.
+	png = os.path.join(folder, '..', fname + '.png')
+	if os.path.exists(png):
+		return load_and_trim_cv2(png)
+	s = hs.load(resolve_frame_path(str(Path(folder).parent), fname))
+	arr = np.asarray(s.data, dtype=float)
+	lo, hi = np.nanpercentile(arr, [1, 99])
+	arr8 = (np.clip((arr - lo) / (hi - lo + 1e-9), 0, 1) * 255).astype(np.uint8)
+	return cv2.cvtColor(arr8, cv2.COLOR_GRAY2RGB)
+
 def plot_output_page(fname,folder,full_df=None):
 	'''
 	Code has been created with AI assistance (OpenAI GPT-5) and manually reviewed
 	'''
 	sf = Path(folder.rstrip('/')).name
 	pngs = {
-		"a": folder+'../'+fname+".png",
 		"b": folder+sf + '_vmap_rotated.png',
 		"c": folder+sf + '_diff_hist.png',
 		"d": folder+sf + '_angles_hist.png',
 		"e": folder+sf + '_vmap_rotated_fr0.png',
 	}
-	
-	#print(pngs)
-	# Load & trim
+
+	# Load & trim; slot "a" is the frame preview <fname>.png, or the processing
+	# TIFF when no png was made (see _panel_image).
 	imgs = {k: load_and_trim_cv2(Path(v)) for k, v in pngs.items()}
+	imgs["a"] = _panel_image(folder, fname)
 
 	# -------- figure layout --------
 	# 2 rows, 3 columns; first row col3 is text panel
