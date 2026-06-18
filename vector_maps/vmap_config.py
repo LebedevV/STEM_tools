@@ -107,6 +107,7 @@ class Run(BaseModel):
     gui: bool = True                  # master allow; per-pass gui decides, --no-gui forces off
     seed: bool = False
     seed_file: str = "{fname}.start.toml"
+    save_stem: str = "{fname}_{name}"  # saved-pass output folder; {fname}=frame stem, {name}=pass
     passes: list[Pass]
 
 
