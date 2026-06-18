@@ -108,6 +108,7 @@ class Run(BaseModel):
     seed: bool = False
     seed_file: str = "{fname}.start.toml"
     save_stem: str = "{fname}_{name}"  # saved-pass output folder; {fname}=frame stem, {name}=pass
+    unit_cell: bool = False            # after the fit, save the averaged unit cell (<fname>_uc_*.tif + _uc_figure.png)
     passes: list[Pass]
 
 

@@ -57,6 +57,8 @@ fit   = [true, true]
 gui       = true                 # open sliders on gui-marked passes; --no-gui overrides
 seed      = true                 # persist + reuse the hand-tuned start
 seed_file = "{fname}.start.toml" # separate sidecar (main config stays pristine)
+save_stem = "{fname}_{name}"     # saved-pass output folder; {fname}=frame stem, {name}=pass
+unit_cell = false                # after the fit, save the averaged cell (<fname>_uc_{mean,std,count}.tif + _uc_figure.png)
 
 passes = [
   { name = "prefit", sub_area = [1.0,3.0,1.0,3.0], vec_scale = 0.01, max_dist = 0.15, gui = true },

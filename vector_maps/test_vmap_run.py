@@ -94,3 +94,15 @@ def test_save_folder_includes_fname(monkeypatch):
 	vr._run_pass(Pass(name="prefit", save=False), "fld/", "myframe", 0.01, {}, {}, {},
 		     False, True)
 	assert captured["sf"] is None
+
+
+def test_run_unit_cell_flag_defaults_off_and_example_parses():
+	# the averaged-unit-cell save is opt-in; the re-atomap example turns it on and
+	# carries a re-detect step (PZT-style chained detection).
+	from vmap_config import Run
+	assert Run(passes=[Pass(name="p")]).unit_cell is False
+	cfg = load_config(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+				       "examples", "fit_reatomap.toml"))
+	assert cfg.run.unit_cell is True
+	det = [p.detect for p in cfg.run.passes if p.detect is not None]
+	assert len(det) == 1 and det[0].ptonn == [0.6, 0.4] and det[0].merge is True

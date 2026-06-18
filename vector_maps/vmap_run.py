@@ -238,6 +238,13 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
     if seed_path and gui_opened:
         _save_seed(seed_path, lat_params)
 
+    if cfg.run.unit_cell:
+        # fold the frame onto the refined cell -> <fname>_uc_{mean,std,count}.tif
+        # + <fname>_uc_figure.png (cell schematic | mean | std), as the legacy
+        # --unit-cell driver did (motif drives the schematic).
+        from unit_cell_average import unit_cell_average_to_tiffs
+        unit_cell_average_to_tiffs(os.path.join(folder, fname), lat_params, cal, motif)
+
     return lat_params, motif, extra_pars, meta
 
 
