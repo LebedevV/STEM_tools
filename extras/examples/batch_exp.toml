@@ -1,0 +1,31 @@
+# Experimental batch: register raw STEM stacks, then detect atom columns.
+#   python exp_batch_sweep.py --config examples/batch_exp.toml
+# Tune sep/thr/ptonn interactively on one frame (atom_detect.ipynb) first,
+# then replay the same settings headless across the catalog.
+
+[manifest]
+root = "data/session"        # walked recursively -> catalog of .emd/.dm3/.dm4 stacks
+# path = "catalog.csv"       # ...or a pre-built catalog (exp_batch_manifest.py <root>)
+
+[filter]                     # optional; select a subset of the catalog
+# ext = ".emd"
+# n_frames = 16
+
+[align]
+nra        = false           # true -> also write _NRA.tiff (demon registration)
+bin_factor = 1
+use        = "RA"            # which averaged frame feeds detection: RA | NRA
+
+[detect]                     # detect_columns knobs; imsize derived per-frame if omitted
+sep                 = 8.0
+sigma1              = 1.0
+thr                 = 0.1
+ptonn               = 0.6
+pca                 = true
+subtract_background = true
+# imsize = [16.0, 16.0]      # nm; overrides the per-frame scan-size calibration
+
+[run]
+retries       = 1
+skip_existing = true
+# chain_fit   = "../vector_maps/examples/fit_si.toml"   # optional: continue into the lattice fit
