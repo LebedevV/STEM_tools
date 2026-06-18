@@ -25,7 +25,7 @@ def test_manifest_root_xor_path():
 def test_defaults_round_trip():
     c = cfgmod.ExtrasBatchConfig.model_validate({"manifest": {"root": "data"}})
     assert c.align.nra is False and c.align.bin_factor == 1 and c.align.use == "RA"
-    assert c.detect.imsize is None and c.run.retries == 1 and c.run.skip_existing is True
+    assert c.detect.sep == 8.0 and c.run.retries == 1 and c.run.skip_existing is True
     assert c.run.chain_fit is None
 
 

@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 # Catalog raw multi-frame STEM stacks (.emd/.dm3/.dm4) for the experimental batch.
 # Mirrors vector_maps/vmap_manifest, but raw files carry no sg/hkl/tilt naming, so
-# this is a catalog of stacks + per-file pixel-size metadata (one row per stack).
+# this is a catalog of stacks + shape (one row per stack). The pixel-size columns are
+# best-effort / informational only -- experimental calibration is NOT taken from here;
+# it comes from the per-.dm3 <name>_frame.txt sidecar at fit time (read_frame_calib).
 #   python exp_batch_manifest.py <root> [-o catalog.csv]
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
