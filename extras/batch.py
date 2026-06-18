@@ -69,17 +69,14 @@ def alignment(s,folder,fname,NRA=False,bin_factor=1):
     Y, X = s.data.shape[1], s.data.shape[2]
     frames_per_chunk = 4
     s.data = s.data.rechunk((frames_per_chunk, Y, X))
+    
+    shifts = s.estimate_shift2D(reference="current", sub_pixel_factor=bin_factor*4)
 
-    sd = s.copy().rebin(scale=(1, bin_factor, bin_factor))
+    #sd = s.copy().rebin(scale=(1, bin_factor, bin_factor))
 
-    aligned = sd.copy()
-    aligned.align2D(
-        crop=True,
-        reference='current',
-        sub_pixel_factor=bin_factor*4
-    )
-
-    ds = hyperspy_to_sidpy(aligned, title="raw")
+    #aligned = sd.copy()
+    s.align2D(shifts=shifts, num_workers=4)
+    ds = hyperspy_to_sidpy(s, title="raw")
     ds.data_type = 'IMAGE_STACK'
     ds.x.dimension_type = DimensionType.SPATIAL
     ds.y.dimension_type = DimensionType.SPATIAL
@@ -95,13 +92,14 @@ def alignment(s,folder,fname,NRA=False,bin_factor=1):
         
         
 if __name__ == '__main__':
-    folder = '/path/to/folder/'
+    folder = 'path_to_folder'
     ff = os.listdir(folder)
-    ending = '.dm3'
+    ending = '.dm4'
     ff = [i[:-4] for i in ff if i.endswith(ending) ]#or dm4, or emd
 
     for fname in ff:
         s = hs.load(folder+fname+ending,lazy=True)
+        #sc = s.inav[1::4].copy()
         if len(s.data.shape)>2:
             print(fname)
             try:
