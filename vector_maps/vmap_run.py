@@ -163,49 +163,60 @@ def _merge_body(parent, body):
     return parent.model_copy(update={**overrides, "expand": None, "body": []})
 
 
-def _dedupe_xy(df, radius):
-    # Drop cross-pass re-detections of the same column: within one pass atomap keeps
-    # peaks >= the detection separation apart, so any pair closer than `radius` px is one
-    # column found twice on a later residual. Keeps the earlier-pass row of each cluster.
-    from scipy.spatial import cKDTree
-    if len(df) < 2 or radius <= 0:
-        return df
-    coords = df[["x_obs0", "y_obs0"]].to_numpy(float)
-    drop = set()
-    for i, j in sorted(cKDTree(coords).query_pairs(r=radius)):
-        if i not in drop:
-            drop.add(j)
-    if not drop:
-        return df
-    return df.drop(index=df.index[sorted(drop)]).reset_index(drop=True)
+def _rotate_backup(path, keep=3):
+    # Bump an existing measurement out of the way before a reset overwrites it:
+    # path -> .bckp1, .bckp1 -> .bckp2, ...; .bckp{keep} drops off ("gone").
+    if not os.path.exists(path):
+        return
+    oldest = f"{path}.bckp{keep}"
+    if os.path.exists(oldest):
+        os.remove(oldest)
+    for i in range(keep - 1, 0, -1):
+        src = f"{path}.bckp{i}"
+        if os.path.exists(src):
+            os.replace(src, f"{path}.bckp{i + 1}")
+    os.replace(path, f"{path}.bckp1")
 
 
-def _run_detect(d, folder, fname, name):
-    # PZT-style re-detection: one chained detect pass per ptonn entry (each on the prior
-    # residual; ptonn = percent_to_nn fit window). The passes are concatenated, deduped,
-    # and written to the save_as stem; the original <fname>_xyI.csv is left untouched.
-    # Mirrors index_all3 / fit_lattice_PZT.
+def _run_detect(d, folder, fname):
+    # Re-detect mid-schedule. Two modes (see DESIGN.md), never crossed:
+    #   reset (default): one fresh detection REPLACES <fname>_xyI.csv; the prior one
+    #     rotates to .bckp1/2/3. Returns None -> the next fit reads the canonical csv.
+    #   accrete (PZT): one detect pass per ptonn entry, each on the previous pass's
+    #     residual, tagged A/B/..., concatenated (NO dedup -- fitted positions must not
+    #     be merged) into <fname>_sub_AB_xyI.csv, which the next fit reads. The canonical
+    #     <fname>_xyI.csv is left untouched. Mirrors fit_lattice_PZT.
     from detect_columns import detect_columns
-    parts, source = [], None
-    for i, pt in enumerate(d.ptonn):
-        suffix = f"_sub{i}_rerun"
+    if not d.accrete:
+        _rotate_backup(os.path.join(folder, f"{fname}_xyI.csv"))
         detect_columns(
-            fname=fname + ".tif", folder=folder,
-            imsize=tuple(d.imsize),
+            fname=fname + ".tif", folder=folder, imsize=tuple(d.imsize),
+            sep=d.sep, sigma1=d.sigma1, thr=d.thr, ptonn=d.ptonn[0],
+            pca=d.pca, subtract_background=d.subtract_background,
+            interactive=False, out_suffix="",
+        )
+        return None
+    parts, sub_ids, source = [], [], None
+    for i, pt in enumerate(d.ptonn):
+        sid = chr(ord("A") + i)
+        suffix = f"_sub_{sid}"
+        detect_columns(
+            fname=fname + ".tif", folder=folder, imsize=tuple(d.imsize),
             sep=d.sep, sigma1=d.sigma1, thr=d.thr, ptonn=pt,
             pca=d.pca, subtract_background=d.subtract_background,
             interactive=False, source_fname=source, out_suffix=suffix,
         )
         parts.append(os.path.join(folder, f"{fname}{suffix}_xyI.csv"))
+        sub_ids.append(sid)
         source = f"{fname}{suffix}_2DG_ptnn_{pt}_diff2.tif"
     frames = []
-    for j, path in enumerate(parts):
+    for path, sid in zip(parts, sub_ids):
         df = pd.read_csv(path)
-        df["sub_id"] = chr(ord("A") + j)
+        df["sub_id"] = sid
         frames.append(df)
-    merged = _dedupe_xy(pd.concat(frames, ignore_index=True, sort=False), radius=0.5 * d.sep)
-    stem = d.save_as.format(fname=fname, name=name)
-    merged.to_csv(os.path.join(folder, f"{stem}_xyI.csv"), index=False, float_format="%.8g")
+    stem = f"{fname}_sub_{''.join(sub_ids)}"
+    pd.concat(frames, ignore_index=True, sort=False).to_csv(
+        os.path.join(folder, f"{stem}_xyI.csv"), index=False, float_format="%.8g")
     return stem
 
 
@@ -224,10 +235,11 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
 
     meta = None
     gui_opened = False
-    dataset = None                      # None -> use <fname>; set to the save_as stem by a detect pass
+    dataset = None                      # None -> use <fname>; a reset detect refreshes it in place
+                                        # (stays None), an accrete detect sets the _sub_AB stem
     for p in cfg.run.passes:
         if p.detect is not None:
-            dataset = _run_detect(p.detect, folder, fname, p.name)
+            dataset = _run_detect(p.detect, folder, fname)
             print(f"[{p.name}] detect -> dataset = {dataset}")
             continue
         if p.expand is not None:

@@ -106,50 +106,70 @@ def test_run_unit_cell_flag_defaults_off_and_example_parses():
 				       "examples", "fit_reatomap.toml"))
 	assert cfg.run.unit_cell is True
 	det = [p.detect for p in cfg.run.passes if p.detect is not None]
-	assert len(det) == 1 and det[0].ptonn == [0.6, 0.4] and det[0].save_as == "{fname}_{name}"
+	assert len(det) == 1 and det[0].ptonn == [0.6, 0.4] and det[0].accrete is True
 
 
-def test_dedupe_xy_drops_within_radius_keeps_distinct():
-	# two coincident clusters; each collapses to its earlier-pass row, distinct ones survive
-	df = pd.DataFrame({
-		"x_obs0": [0.0, 0.4, 10.0, 10.3],
-		"y_obs0": [0.0, 0.0, 0.0, 0.0],
-		"sub_id": ["A", "B", "A", "B"],
-	})
-	out = vr._dedupe_xy(df, radius=1.0)
-	assert out["x_obs0"].tolist() == [0.0, 10.0]
-	assert out["sub_id"].tolist() == ["A", "A"]
+def test_rotate_backup_rotates_and_caps(tmp_path):
+	# path -> .bckp1, older ones shift down, only `keep` (3) survive
+	p = os.path.join(str(tmp_path), "m.csv")
+	for tag in ["A", "B", "C", "D"]:
+		with open(p, "w") as f:
+			f.write(tag)
+		vr._rotate_backup(p)
+	assert not os.path.exists(p)                       # last rotate moved it to .bckp1
+	assert open(p + ".bckp1").read() == "D"
+	assert open(p + ".bckp2").read() == "C"
+	assert open(p + ".bckp3").read() == "B"
+	assert not os.path.exists(p + ".bckp4")            # "A" dropped off
 
 
-def test_dedupe_xy_noop_when_all_distinct():
-	df = pd.DataFrame({"x_obs0": [0.0, 5.0, 10.0], "y_obs0": [0.0, 0.0, 0.0]})
-	assert len(vr._dedupe_xy(df, radius=1.0)) == 3
-
-
-def test_run_detect_merges_dedupes_to_save_as(tmp_path, monkeypatch):
-	# pass 0 finds two columns; pass 1 (on the residual) re-finds the first plus a new one.
-	# merge+dedupe must keep 3 unique, written to the save_as stem, original left untouched.
+def test_run_detect_reset_replaces_and_backs_up(tmp_path, monkeypatch):
+	# reset (default): fresh detection overwrites <fname>_xyI.csv, old -> .bckp1, returns None
 	import sys as _sys
 	import types
 	folder = os.path.join(str(tmp_path), "")
-	rows = {"_sub0_rerun": [(0.0, 0.0), (20.0, 0.0)],
-		"_sub1_rerun": [(0.3, 0.0), (40.0, 0.0)]}        # (0.3,0) duplicates pass-0's (0,0)
+	with open(os.path.join(folder, "frame_xyI.csv"), "w") as f:
+		f.write("OLD")
 
 	def fake_detect(**kw):
-		stem = os.path.splitext(kw["fname"])[0] + kw["out_suffix"]
-		pts = rows[kw["out_suffix"]]
-		pd.DataFrame({"x_obs0": [p[0] for p in pts], "y_obs0": [p[1] for p in pts],
-			      "I_gauss": [1.0] * len(pts)}).to_csv(
-			os.path.join(kw["folder"], stem + "_xyI.csv"), index=False)
-
+		assert kw["out_suffix"] == ""                  # reset writes the canonical name
+		pd.DataFrame({"x_obs0": [1.0, 2.0], "y_obs0": [0.0, 0.0]}).to_csv(
+			os.path.join(kw["folder"], os.path.splitext(kw["fname"])[0] + "_xyI.csv"), index=False)
 	fake_mod = types.ModuleType("detect_columns")
 	fake_mod.detect_columns = fake_detect
 	monkeypatch.setitem(_sys.modules, "detect_columns", fake_mod)
 
-	d = Detect(ptonn=[0.6, 0.6], sep=2.0, imsize=[10.0, 10.0], save_as="{fname}_redetect")
-	stem = vr._run_detect(d, folder, "frame", "redetect")
+	out = vr._run_detect(Detect(ptonn=[0.6], imsize=[10.0, 10.0]), folder, "frame")
 
-	assert stem == "frame_redetect"
-	out = pd.read_csv(os.path.join(folder, "frame_redetect_xyI.csv"))
-	assert len(out) == 3                                          # 4 detected, 1 dup removed
-	assert not os.path.exists(os.path.join(folder, "frame_xyI.csv"))   # original untouched
+	assert out is None                                 # fit reads the canonical csv
+	assert open(os.path.join(folder, "frame_xyI.csv.bckp1")).read() == "OLD"
+	assert len(pd.read_csv(os.path.join(folder, "frame_xyI.csv"))) == 2
+
+
+def test_run_detect_accrete_concats_no_dedup(tmp_path, monkeypatch):
+	# accrete: chained passes -> _sub_A/_sub_B -> concat into _sub_AB, NO dedup
+	# (a near-coincident cross-pass pair is kept); <fname>_xyI.csv untouched
+	import sys as _sys
+	import types
+	folder = os.path.join(str(tmp_path), "")
+	with open(os.path.join(folder, "frame_xyI.csv"), "w") as f:
+		f.write("OLD")
+	rows = {"_sub_A": [(0.0, 0.0), (20.0, 0.0)],
+		"_sub_B": [(0.1, 0.0), (40.0, 0.0)]}           # (0.1,0) ~ A's (0,0): kept anyway
+
+	def fake_detect(**kw):
+		pts = rows[kw["out_suffix"]]
+		pd.DataFrame({"x_obs0": [p[0] for p in pts], "y_obs0": [p[1] for p in pts]}).to_csv(
+			os.path.join(kw["folder"], os.path.splitext(kw["fname"])[0] + kw["out_suffix"] + "_xyI.csv"),
+			index=False)
+	fake_mod = types.ModuleType("detect_columns")
+	fake_mod.detect_columns = fake_detect
+	monkeypatch.setitem(_sys.modules, "detect_columns", fake_mod)
+
+	stem = vr._run_detect(Detect(ptonn=[0.6, 0.4], imsize=[10.0, 10.0], accrete=True), folder, "frame")
+
+	assert stem == "frame_sub_AB"
+	out = pd.read_csv(os.path.join(folder, "frame_sub_AB_xyI.csv"))
+	assert len(out) == 4                               # all kept -- no dedup
+	assert sorted(out["sub_id"].tolist()) == ["A", "A", "B", "B"]
+	assert open(os.path.join(folder, "frame_xyI.csv")).read() == "OLD"  # canonical untouched

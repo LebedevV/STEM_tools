@@ -109,18 +109,25 @@ point set carry forward. A step is either a **fit** or a **detect**.
 - **`add`** — introduce new motif atoms here; persist for later steps.
 - **`expand`** — growing-ROI loop (below).
 
-**Detect step** — re-detect, for the interleaved flow:
+**Detect step** — re-detect mid-schedule, in one of two modes:
 
 ```toml
-{ name = "redetect", detect = { ptonn = [0.6, 0.4], imsize = [5.0, 5.0] } }
+# reset (default): a fresh detection that REPLACES the current measurement
+{ name = "redetect", detect = { ptonn = [0.6], imsize = [5.0, 5.0] } }
+# accrete (PZT): add a B sublattice detected on A's residual
+{ name = "redetect", detect = { ptonn = [0.6, 0.4], imsize = [5.0, 5.0], accrete = true } }
 ```
 
-Wraps `detect_columns`: one detect pass per `ptonn` entry (the `percent_to_nn`
-fit window), each chained on the previous pass's residual. The passes are
-concatenated and deduped (a column re-found on a later residual is dropped),
-then written to `save_as` (default `{fname}_{name}` → `<frame>_<step>_xyI.csv`),
-which the next fit consumes — expressing **fit → re-detect → re-fit**. The
-original `<frame>_xyI.csv` is left untouched. `imsize` (nm) is required.
+**reset** (`accrete = false`, default) runs one detection and overwrites
+`<frame>_xyI.csv`, rotating the previous one to `.bckp1`/`.bckp2`/`.bckp3` (oldest
+dropped). The next fit reads the fresh measurement — each reset is an independent,
+reproducible detection (the common case, e.g. re-seeding A).
+
+**accrete** (`accrete = true`) runs one detect pass per `ptonn` entry, each on the
+previous pass's residual (`_diff2.tif`), tags them A/B/…, and **concatenates** them
+(no dedup — fitted positions are never merged) into `<frame>_sub_AB_xyI.csv`, which
+the next fit reads. `<frame>_xyI.csv` is left untouched: a reset measurement is never
+folded back into an accreted set. Mirrors `fit_lattice_PZT`. `imsize` (nm) is required.
 
 ### `add` / `expand` examples
 
@@ -266,8 +273,8 @@ Concretely, one round (stages 2–6):
   seeded by the fit's A positions.
 - stage 5 — `detect_columns(ptonn=0.4, source_fname=…_A_rerun…diff2.tif,
   start_csv=csv_B)` — detect weak on the strong-subtracted residual, seeded.
-- merge — `concat(A, B)`, deduped → the `save_as` stem `…_xyI.csv`.
-- stage 6 — `run_fit_pipeline(dataset_fname=<save_as>)` — fit on the merge.
+- merge — `concat(A, B)`, no dedup → `…_sub_AB_xyI.csv` (accrete mode).
+- stage 6 — `run_fit_pipeline(dataset_fname="…_sub_AB")` — fit on the merge.
 
 New primitives beyond phase 1:
 

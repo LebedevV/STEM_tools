@@ -74,15 +74,15 @@ class Expand(BaseModel):
 
 class Detect(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ptonn: list[float]                       # percent_to_nn fit window, one per chained residual pass
+    ptonn: list[float]                       # percent_to_nn fit window; accrete: one per residual pass, reset: the first
     sep: float = 2.0
     sigma1: float = 1.0
     thr: float = 0.1
     imsize: list[float]                      # nm; required by detect_columns
     pca: bool = False
     subtract_background: bool = True
-    save_as: str = "{fname}_{name}"          # output stem (templated); writes <save_as>_xyI.csv,
-                                             # leaving the original <fname>_xyI.csv untouched
+    accrete: bool = False                    # False = reset (replace <fname>_xyI.csv, old -> .bckp1/2/3);
+                                             # True  = accrete PZT-style (chain ptonn on residuals -> _sub_AB)
 
 
 class Pass(BaseModel):
