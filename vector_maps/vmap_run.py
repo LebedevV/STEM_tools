@@ -178,46 +178,41 @@ def _rotate_backup(path, keep=3):
     os.replace(path, f"{path}.bckp1")
 
 
-def _run_detect(d, folder, fname):
-    # Re-detect mid-schedule. Two modes (see DESIGN.md), never crossed:
-    #   reset (default): one fresh detection REPLACES <fname>_xyI.csv; the prior one
+def _run_detect(d, folder, fname, current, name):
+    # One detection step, composed at the schedule level (see DESIGN.md). The two
+    # modes are never crossed:
+    #   reset (default): a fresh detection REPLACES <fname>_xyI.csv; the prior one
     #     rotates to .bckp1/2/3. Returns None -> the next fit reads the canonical csv.
-    #   accrete (PZT): one detect pass per ptonn entry, each on the previous pass's
-    #     residual, tagged A/B/..., concatenated (NO dedup -- fitted positions must not
-    #     be merged) into <fname>_sub_AB_xyI.csv, which the next fit reads. The canonical
-    #     <fname>_xyI.csv is left untouched. Mirrors fit_lattice_PZT.
+    #   accrete: detect (typically on d.source, a prior step's _diff2.tif residual),
+    #     then concat that detection onto the current working set -- `current` (None ->
+    #     canonical) -- with NO dedup (fitted positions must not be merged), into
+    #     <save_as>_xyI.csv. The working set is left untouched, so a reset measurement
+    #     is never folded back into an accreted set. Mirrors fit_lattice_PZT's A+B concat.
     from detect_columns import detect_columns
+    src = d.source.format(fname=fname, name=name) if d.source else None
+
+    def detect(out_suffix):
+        detect_columns(
+            fname=fname + ".tif", folder=folder, imsize=tuple(d.imsize),
+            sep=d.sep, sigma1=d.sigma1, thr=d.thr, ptonn=d.ptonn,
+            pca=d.pca, subtract_background=d.subtract_background,
+            interactive=False, source_fname=src, out_suffix=out_suffix,
+        )
+
     if not d.accrete:
         _rotate_backup(os.path.join(folder, f"{fname}_xyI.csv"))
-        detect_columns(
-            fname=fname + ".tif", folder=folder, imsize=tuple(d.imsize),
-            sep=d.sep, sigma1=d.sigma1, thr=d.thr, ptonn=d.ptonn[0],
-            pca=d.pca, subtract_background=d.subtract_background,
-            interactive=False, out_suffix="",
-        )
+        detect(out_suffix="")
         return None
-    parts, sub_ids, source = [], [], None
-    for i, pt in enumerate(d.ptonn):
-        sid = chr(ord("A") + i)
-        suffix = f"_sub_{sid}"
-        detect_columns(
-            fname=fname + ".tif", folder=folder, imsize=tuple(d.imsize),
-            sep=d.sep, sigma1=d.sigma1, thr=d.thr, ptonn=pt,
-            pca=d.pca, subtract_background=d.subtract_background,
-            interactive=False, source_fname=source, out_suffix=suffix,
-        )
-        parts.append(os.path.join(folder, f"{fname}{suffix}_xyI.csv"))
-        sub_ids.append(sid)
-        source = f"{fname}{suffix}_2DG_ptnn_{pt}_diff2.tif"
-    frames = []
-    for path, sid in zip(parts, sub_ids):
-        df = pd.read_csv(path)
-        df["sub_id"] = sid
-        frames.append(df)
-    stem = f"{fname}_sub_{''.join(sub_ids)}"
-    pd.concat(frames, ignore_index=True, sort=False).to_csv(
-        os.path.join(folder, f"{stem}_xyI.csv"), index=False, float_format="%.8g")
-    return stem
+
+    detect(out_suffix=f"_{name}")
+    base = current if current is not None else fname
+    target = d.save_as.format(fname=fname, name=name)
+    pd.concat(
+        [pd.read_csv(os.path.join(folder, f"{base}_xyI.csv")),
+         pd.read_csv(os.path.join(folder, f"{fname}_{name}_xyI.csv"))],
+        ignore_index=True, sort=False,
+    ).to_csv(os.path.join(folder, f"{target}_xyI.csv"), index=False, float_format="%.8g")
+    return target
 
 
 def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
@@ -235,11 +230,12 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
 
     meta = None
     gui_opened = False
-    dataset = None                      # None -> use <fname>; a reset detect refreshes it in place
-                                        # (stays None), an accrete detect sets the _sub_AB stem
+    dataset = None                      # the working point set the next fit reads (None -> canonical
+                                        # <fname>_xyI.csv); a reset detect resets it to None, an accrete
+                                        # detect concats onto it and sets its save_as stem
     for p in cfg.run.passes:
         if p.detect is not None:
-            dataset = _run_detect(p.detect, folder, fname)
+            dataset = _run_detect(p.detect, folder, fname, dataset, p.name)
             print(f"[{p.name}] detect -> dataset = {dataset}")
             continue
         if p.expand is not None:

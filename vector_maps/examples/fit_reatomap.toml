@@ -2,9 +2,10 @@
 #   python vmap_run.py --config examples/fit_reatomap.toml --no-gui
 #
 # Shows two things that aren't obvious without an example:
-#   * a `detect` step inside run.passes re-runs atomap column finding mid-schedule
-#     (PZT-style chained re-detection over the ptonn list -> one merged point set the
-#     next fit consumes); see DESIGN.md "Detect step".
+#   * `detect` steps inside run.passes re-run atomap column finding mid-schedule;
+#     reset (default) replaces <fname>_xyI.csv, accrete concats a sublattice detected
+#     on a prior step's residual onto the working set -- composed at the schedule level
+#     (re-seed A -> fit A -> detect B on A's residual -> merge); see DESIGN.md "Detect step".
 #   * run.unit_cell saves the averaged unit cell after the fit.
 
 [io]
@@ -38,9 +39,13 @@ seed      = false
 unit_cell = true               # after the fit -> <fname>_uc_{mean,std,count}.tif + _uc_figure.png
 
 # schedule (initial <fname>_xyI.csv from detect_columns / the notebook):
-#   prefit on the seed points -> re-detect (atomap) -> final fit on the merged points
+#   prefit -> re-seed A (reset) -> fit A -> detect B on A's residual (accrete) -> fit A+B
 passes = [
-  { name = "prefit",   sub_area = [1.0, 4.0, 1.0, 4.0], vec_scale = 0.1, max_dist = 0.1 },
-  { name = "redetect", detect = { ptonn = [0.6, 0.4], imsize = [16.0, 16.0], accrete = true } },
-  { name = "free",     sub_area = [0.5, 4.5, 0.5, 4.5], vec_scale = 0.25, max_dist = 0.1, save = true, fit = { B_1 = [true, true] } },
+  { name = "prefit",  sub_area = [1.0, 4.0, 1.0, 4.0], vec_scale = 0.1, max_dist = 0.1 },
+  # reset: a fresh A detection replaces <fname>_xyI.csv (old -> .bckp1/2/3)
+  { name = "detectA", detect = { ptonn = 0.6, imsize = [16.0, 16.0] } },
+  { name = "fitA",    sub_area = [0.5, 4.5, 0.5, 4.5], vec_scale = 0.2, max_dist = 0.1 },
+  # accrete: detect B on detectA's residual, concat onto the working set -> {fname}_sub_AB_xyI.csv
+  { name = "detectB", detect = { ptonn = 0.4, imsize = [16.0, 16.0], accrete = true, source = "{fname}_2DG_ptnn_0.6_diff2.tif", save_as = "{fname}_sub_AB" } },
+  { name = "fitAB",   sub_area = [0.5, 4.5, 0.5, 4.5], vec_scale = 0.25, max_dist = 0.1, save = true, fit = { B_1 = [true, true] } },
 ]

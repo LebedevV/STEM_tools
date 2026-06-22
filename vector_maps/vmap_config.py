@@ -74,15 +74,26 @@ class Expand(BaseModel):
 
 class Detect(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ptonn: list[float]                       # percent_to_nn fit window; accrete: one per residual pass, reset: the first
+    ptonn: float = 0.6                       # percent_to_nn fit window (scalar; one detection per step)
     sep: float = 2.0
     sigma1: float = 1.0
     thr: float = 0.1
     imsize: list[float]                      # nm; required by detect_columns
     pca: bool = False
     subtract_background: bool = True
+    source: Optional[str] = None             # detect on this image instead of <fname>.tif, e.g. a prior
+                                             # detect step's "{fname}_2DG_ptnn_<ptonn>_diff2.tif" residual
     accrete: bool = False                    # False = reset (replace <fname>_xyI.csv, old -> .bckp1/2/3);
-                                             # True  = accrete PZT-style (chain ptonn on residuals -> _sub_AB)
+                                             # True  = accrete (concat this detection onto the working set)
+    save_as: Optional[str] = None            # accrete output stem ({fname}/{name} templated); required iff accrete
+
+    @model_validator(mode="after")
+    def _save_as_iff_accrete(self):
+        if self.accrete and not self.save_as:
+            raise ValueError("detect: accrete=true needs save_as (the merged-output stem)")
+        if self.save_as and not self.accrete:
+            raise ValueError("detect: save_as is for accrete only; reset writes <fname>_xyI.csv")
+        return self
 
 
 class Pass(BaseModel):

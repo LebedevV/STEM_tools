@@ -109,13 +109,15 @@ point set carry forward. A step is either a **fit** or a **detect**.
 - **`add`** — introduce new motif atoms here; persist for later steps.
 - **`expand`** — growing-ROI loop (below).
 
-**Detect step** — re-detect mid-schedule, in one of two modes:
+**Detect step** — one detection, run mid-schedule, in one of two modes. `ptonn` is a
+scalar (the strong/weak split that `fit_lattice_PZT` drove with a `ptonn` list is now
+composed across steps — one detection per step). `imsize` (nm) is required.
 
 ```toml
 # reset (default): a fresh detection that REPLACES the current measurement
-{ name = "redetect", detect = { ptonn = [0.6], imsize = [5.0, 5.0] } }
-# accrete (PZT): add a B sublattice detected on A's residual
-{ name = "redetect", detect = { ptonn = [0.6, 0.4], imsize = [5.0, 5.0], accrete = true } }
+{ name = "detectA", detect = { ptonn = 0.6, imsize = [5.0, 5.0] } }
+# accrete: detect a B sublattice on A's residual, concat onto the working set
+{ name = "detectB", detect = { ptonn = 0.4, imsize = [5.0, 5.0], accrete = true, source = "{fname}_2DG_ptnn_0.6_diff2.tif", save_as = "{fname}_sub_AB" } }
 ```
 
 **reset** (`accrete = false`, default) runs one detection and overwrites
@@ -123,11 +125,13 @@ point set carry forward. A step is either a **fit** or a **detect**.
 dropped). The next fit reads the fresh measurement — each reset is an independent,
 reproducible detection (the common case, e.g. re-seeding A).
 
-**accrete** (`accrete = true`) runs one detect pass per `ptonn` entry, each on the
-previous pass's residual (`_diff2.tif`), tags them A/B/…, and **concatenates** them
-(no dedup — fitted positions are never merged) into `<frame>_sub_AB_xyI.csv`, which
-the next fit reads. `<frame>_xyI.csv` is left untouched: a reset measurement is never
-folded back into an accreted set. Mirrors `fit_lattice_PZT`. `imsize` (nm) is required.
+**accrete** (`accrete = true`) runs one detection — usually on `source`, a prior step's
+residual `_diff2.tif` (`{fname}`/`{name}` templated) — and **concatenates** it onto the
+current working set (no dedup — fitted positions are never merged) into the `save_as`
+stem (`{fname}`/`{name}` templated; required for accrete), which the next fit reads. The
+working set is left untouched, so a reset measurement is never folded back into an
+accreted set. Merge/reset thus compose at the schedule level: re-seed A (reset) → fit A →
+detect B on A's residual (accrete) → fit A+B. Mirrors `fit_lattice_PZT`'s A+B concat.
 
 ### `add` / `expand` examples
 
@@ -287,8 +291,8 @@ New primitives beyond phase 1:
   Interactive only.
 - **C — intensity-scoped / masked detection.** `source_fname` (detect on the
   residual after the prior sublattice's model) does the scoping; `separation` /
-  `threshold` pick the columns. The phase-1 detect step already chains residuals,
-  merges and dedupes; this scopes it by intensity.
+  `threshold` pick the columns. The phase-1 accrete step already detects on a
+  residual `source` and concats; this scopes it by intensity.
 
 Stage 4 (add the schema) reuses phase-1 primitives: a plot-only pass
 (`refine = false`) with `add` at guessed coords — no new construct.

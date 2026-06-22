@@ -99,14 +99,18 @@ def test_save_folder_includes_fname(monkeypatch):
 
 def test_run_unit_cell_flag_defaults_off_and_example_parses():
 	# the averaged-unit-cell save is opt-in; the re-atomap example turns it on and
-	# carries a re-detect step (PZT-style chained detection).
+	# composes A+B at the schedule level (reset detect A -> accrete detect B).
 	from vmap_config import Run
 	assert Run(passes=[Pass(name="p")]).unit_cell is False
 	cfg = load_config(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 				       "examples", "fit_reatomap.toml"))
 	assert cfg.run.unit_cell is True
 	det = [p.detect for p in cfg.run.passes if p.detect is not None]
-	assert len(det) == 1 and det[0].ptonn == [0.6, 0.4] and det[0].accrete is True
+	assert len(det) == 2
+	a, b = det
+	assert a.ptonn == 0.6 and a.accrete is False and a.save_as is None
+	assert b.ptonn == 0.4 and b.accrete is True and b.save_as == "{fname}_sub_AB"
+	assert b.source == "{fname}_2DG_ptnn_0.6_diff2.tif"
 
 
 def test_rotate_backup_rotates_and_caps(tmp_path):
@@ -133,43 +137,54 @@ def test_run_detect_reset_replaces_and_backs_up(tmp_path, monkeypatch):
 
 	def fake_detect(**kw):
 		assert kw["out_suffix"] == ""                  # reset writes the canonical name
+		assert kw["source_fname"] is None              # ...detecting on the frame, not a residual
 		pd.DataFrame({"x_obs0": [1.0, 2.0], "y_obs0": [0.0, 0.0]}).to_csv(
 			os.path.join(kw["folder"], os.path.splitext(kw["fname"])[0] + "_xyI.csv"), index=False)
 	fake_mod = types.ModuleType("detect_columns")
 	fake_mod.detect_columns = fake_detect
 	monkeypatch.setitem(_sys.modules, "detect_columns", fake_mod)
 
-	out = vr._run_detect(Detect(ptonn=[0.6], imsize=[10.0, 10.0]), folder, "frame")
+	out = vr._run_detect(Detect(ptonn=0.6, imsize=[10.0, 10.0]), folder, "frame", None, "detectA")
 
 	assert out is None                                 # fit reads the canonical csv
 	assert open(os.path.join(folder, "frame_xyI.csv.bckp1")).read() == "OLD"
 	assert len(pd.read_csv(os.path.join(folder, "frame_xyI.csv"))) == 2
 
 
-def test_run_detect_accrete_concats_no_dedup(tmp_path, monkeypatch):
-	# accrete: chained passes -> _sub_A/_sub_B -> concat into _sub_AB, NO dedup
-	# (a near-coincident cross-pass pair is kept); <fname>_xyI.csv untouched
+def test_run_detect_accrete_concats_onto_working_set_no_dedup(tmp_path, monkeypatch):
+	# accrete: detect B on a residual source, concat onto the current working set (here
+	# the canonical A csv) -> save_as; NO dedup (a near-coincident A/B pair is kept);
+	# the working set is left untouched.
 	import sys as _sys
 	import types
 	folder = os.path.join(str(tmp_path), "")
-	with open(os.path.join(folder, "frame_xyI.csv"), "w") as f:
-		f.write("OLD")
-	rows = {"_sub_A": [(0.0, 0.0), (20.0, 0.0)],
-		"_sub_B": [(0.1, 0.0), (40.0, 0.0)]}           # (0.1,0) ~ A's (0,0): kept anyway
+	pd.DataFrame({"x_obs0": [0.0, 20.0], "y_obs0": [0.0, 0.0]}).to_csv(   # current working set = A
+		os.path.join(folder, "frame_xyI.csv"), index=False)
 
 	def fake_detect(**kw):
-		pts = rows[kw["out_suffix"]]
-		pd.DataFrame({"x_obs0": [p[0] for p in pts], "y_obs0": [p[1] for p in pts]}).to_csv(
+		assert kw["out_suffix"] == "_detectB"                            # detection -> a per-step file
+		assert kw["source_fname"] == "frame_2DG_ptnn_0.6_diff2.tif"      # explicit residual, templated
+		pd.DataFrame({"x_obs0": [0.1, 40.0], "y_obs0": [0.0, 0.0]}).to_csv(  # (0.1,0) ~ A's (0,0): kept
 			os.path.join(kw["folder"], os.path.splitext(kw["fname"])[0] + kw["out_suffix"] + "_xyI.csv"),
 			index=False)
 	fake_mod = types.ModuleType("detect_columns")
 	fake_mod.detect_columns = fake_detect
 	monkeypatch.setitem(_sys.modules, "detect_columns", fake_mod)
 
-	stem = vr._run_detect(Detect(ptonn=[0.6, 0.4], imsize=[10.0, 10.0], accrete=True), folder, "frame")
+	d = Detect(ptonn=0.4, imsize=[10.0, 10.0], accrete=True,
+		   save_as="{fname}_sub_AB", source="{fname}_2DG_ptnn_0.6_diff2.tif")
+	stem = vr._run_detect(d, folder, "frame", None, "detectB")
 
 	assert stem == "frame_sub_AB"
 	out = pd.read_csv(os.path.join(folder, "frame_sub_AB_xyI.csv"))
-	assert len(out) == 4                               # all kept -- no dedup
-	assert sorted(out["sub_id"].tolist()) == ["A", "A", "B", "B"]
-	assert open(os.path.join(folder, "frame_xyI.csv")).read() == "OLD"  # canonical untouched
+	assert len(out) == 4                               # A's 2 + B's 2, all kept -- no dedup
+	assert "sub_id" not in out.columns                 # plain concat, like fit_lattice_PZT
+	assert len(pd.read_csv(os.path.join(folder, "frame_xyI.csv"))) == 2  # working set untouched
+
+
+def test_detect_save_as_iff_accrete():
+	# save_as is the accrete merged-output stem: accrete needs it, reset rejects it
+	with pytest.raises(ValueError, match="needs save_as"):
+		Detect(ptonn=0.4, imsize=[10.0, 10.0], accrete=True)
+	with pytest.raises(ValueError, match="accrete only"):
+		Detect(ptonn=0.4, imsize=[10.0, 10.0], save_as="{fname}_sub_AB")
