@@ -47,6 +47,14 @@ def _run_row(row, fit_cfg_path, retries):
         data = tomllib.load(f)
     data.setdefault("io", {})["folder"] = folder
     data["io"]["fname"] = stem
+    scan_s = pd.to_numeric(row.get("scan_s"), errors="coerce")
+    if pd.isna(scan_s):
+        # the sweep self-calibrates from each frame's descriptive toml (single source of truth);
+        # without its scan_s (already harvested into the manifest) skip rather than silently
+        # reuse a fixed calibration -- and no second toml read
+        print(f"  SKIP {stem}: no descriptive toml to calibrate from")
+        return None, None, None, {}
+    data["calibration"] = {"source": "frame_size", "frame_size": float(scan_s)}
     cfg = AppConfig.model_validate(data)
     nominal = {m.label: tuple(m.coord) for m in cfg.motif}
     last = None

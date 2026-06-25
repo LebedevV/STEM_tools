@@ -18,8 +18,16 @@ class Io(BaseModel):
 
 class Calibration(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    source: Literal["sidecar", "value"] = "sidecar"   # <fname>_frame.txt | inline value
+    source: Literal["sidecar", "value", "frame_size"] = "sidecar"  # _frame.txt | inline | toml frame_size
     value: Optional[float] = None
+    frame_size: Optional[float] = None                             # source="frame_size": scan_s (Angstrom), /n_px
+    toml_path: Optional[str] = None                                # source="frame_size": read scan_s from this toml
+
+    @model_validator(mode="after")
+    def _frame_size_source(self):
+        if self.source == "frame_size" and (self.frame_size is None) == (self.toml_path is None):
+            raise ValueError("calibration: source='frame_size' needs exactly one of frame_size or toml_path")
+        return self
 
 
 class Lattice(BaseModel):

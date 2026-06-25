@@ -19,9 +19,12 @@ folder = "./"                    # holds <fname>.tif + detected points
 fname  = "sample_010_haadf"      # stem, no .tif
 
 [calibration]
-source = "sidecar"               # "sidecar" = <fname>_frame.txt | "value"
+source = "sidecar"               # "sidecar" = <fname>_frame.txt | "value" | "frame_size"
 value  = 0.0188                  # nm/pixel, used when source = "value"
-# precedence: --calib (CLI) -> sidecar / value (per source) -> error if neither
+# frame_size = 50.0              # source="frame_size": scan_s in A; calib = frame_size/10/n_px
+# toml_path = "<sg>_<hkl>_(ta,tb).toml"  # source="frame_size", alt to frame_size: read scan_s from this toml;
+#                                         # standalone only -- the batch sweep fills frame_size per frame from the manifest
+# precedence: --calib (CLI) -> source (sidecar/value/frame_size) -> error if unset
 
 [lattice]
 abg      = [0.32, 1.18, 145.5]   # a, b (nm), gamma (deg)
@@ -71,8 +74,10 @@ passes = [
 
 - **`[io]`** — data directory + stem.
 - **`[calibration]`** — `source = "sidecar"` reads nm/px from `<fname>_frame.txt`
-  via `read_frame_calib`; `"value"` uses the inline constant; CLI `--calib`
-  overrides both.
+  via `read_frame_calib`; `"value"` uses the inline constant; `"frame_size"` recomputes
+  `scan_s / n_px` against the real grid — `scan_s` given directly (`frame_size`) or read from a
+  descriptive `toml_path`; the batch sweep fills `frame_size` per row from the manifest, skipping
+  any frame without one; CLI `--calib` overrides all.
 - **`[lattice]`** — starting `abg`/`base` and their fit flags (defaults; a seed
   sidecar overrides them at runtime).
 - **`motif`** — array of columns. `label` is the dict key; `el` maps to the motif
@@ -226,11 +231,13 @@ scale = 1000
 - **Manifest** — `vmap_manifest.py <root>` builds it by **recursively walking** the
   tree, so one root spanning several run folders yields a single manifest; each row
   carries a `source` column (its dir relative to the root) so otherwise-identical
-  frames (same `sg`/`hkl`/`tilt`) stay distinguishable in the one `lookup_augmented.csv`.
+  frames (same `sg`/`hkl`/`tilt`) stay distinguishable in the one `lookup_augmented.csv`. Each row
+  also carries the descriptive toml's scalar params (`HT_value`, detector angles, `scan_s`, tilts,
+  `phonons`, `sample_name`, …), harvested in that same pass so the analysis never reopens a toml.
 - **`[filter]`** selects one parameter slice; the sweep reports the match count
   plus an unmatched-values sanity dump.
-- **`[fit]`** reuses the single-frame `fit.toml` per row (overriding only `io`),
-  so the two layers stay DRY.
+- **`[fit]`** reuses the single-frame `fit.toml` per row (overriding `io` and the
+  `[calibration]`, set to `frame_size` from the manifest), so the two layers stay DRY.
 - **`[[maps]]`** — `field`/`significant` name columns the per-frame extractor
   produces (currently `a_fit`/`b_fit`/`g_fit`, `residual_in_pm`, `std`,
   `atoms_used`, `motif_dist`; per-sublattice stats like ellipticity need the

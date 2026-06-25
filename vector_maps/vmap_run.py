@@ -52,6 +52,10 @@ def _resolve_calib(cfg, folder, override):
         return float(cfg.calibration.value)
     if cfg.calibration.source == "sidecar":
         return read_frame_calib(folder, cfg.io.fname, fallback=cfg.calibration.value)
+    if cfg.calibration.source == "frame_size":
+        if cfg.calibration.frame_size is not None:
+            return calib_from_frame_size(folder, cfg.io.fname, cfg.calibration.frame_size)
+        return read_toml_calib(folder, cfg.io.fname, cfg.calibration.toml_path)
     if cfg.calibration.value is not None:
         return float(cfg.calibration.value)
     raise ValueError("no calibration: set [calibration].value, a sidecar, or --calib")
@@ -302,6 +306,9 @@ def main(argv=None):
 
     with open(args.config, "rb") as f:
         data = tomllib.load(f)
+    if "manifest" in data or "maps" in data:
+        raise SystemExit(f"{args.config} is a batch sweep config; "
+                         f"run: python vmap_sweep.py --config {args.config}")
     _apply_overrides(data, args.set)
     cfg = AppConfig.model_validate(data)
 

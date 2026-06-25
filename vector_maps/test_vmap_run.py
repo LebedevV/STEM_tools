@@ -188,3 +188,38 @@ def test_detect_save_as_iff_accrete():
 		Detect(ptonn=0.4, imsize=[10.0, 10.0], accrete=True)
 	with pytest.raises(ValueError, match="accrete only"):
 		Detect(ptonn=0.4, imsize=[10.0, 10.0], save_as="{fname}_sub_AB")
+
+
+def test_main_rejects_batch_config():
+	# a batch sweep toml fed to the single-frame runner exits pointing at vmap_sweep,
+	# not a wall of pydantic extra_forbidden errors
+	batch = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples", "batch_pm3m.toml")
+	with pytest.raises(SystemExit, match="vmap_sweep"):
+		vr.main(["--config", batch])
+
+
+def test_calibration_frame_size_source_needs_one_input():
+	# source="frame_size" needs exactly one of frame_size (value) / toml_path (read it)
+	from vmap_config import Calibration
+	for bad in (dict(), dict(frame_size=50.0, toml_path="run.toml")):   # neither / both
+		with pytest.raises(ValueError, match="exactly one"):
+			Calibration(source="frame_size", **bad)
+	assert Calibration(source="frame_size", toml_path="run.toml").toml_path == "run.toml"
+	assert Calibration(source="frame_size", frame_size=50.0).frame_size == 50.0
+
+
+def test_resolve_calib_frame_size_dispatches(monkeypatch):
+	# frame_size (value) -> calib_from_frame_size; else toml_path -> read_toml_calib
+	import types
+	seen = {}
+	monkeypatch.setattr(vr, "calib_from_frame_size",
+			    lambda folder, fname, scan_s: seen.update(scan_s=scan_s) or 0.0125)
+	monkeypatch.setattr(vr, "read_toml_calib",
+			    lambda folder, fname, toml_path: seen.update(toml_path=toml_path) or 0.02)
+	io = types.SimpleNamespace(fname="frame")
+	val = types.SimpleNamespace(source="frame_size", value=None, frame_size=50.0, toml_path=None)
+	assert vr._resolve_calib(types.SimpleNamespace(calibration=val, io=io), "fld/", None) == 0.0125
+	assert seen["scan_s"] == 50.0
+	tom = types.SimpleNamespace(source="frame_size", value=None, frame_size=None, toml_path="t.toml")
+	assert vr._resolve_calib(types.SimpleNamespace(calibration=tom, io=io), "fld/", None) == 0.02
+	assert seen["toml_path"] == "t.toml"
