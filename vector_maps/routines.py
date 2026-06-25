@@ -5,6 +5,7 @@ __license__ = "GPL-v3"
 
 import os
 import filecmp
+import tomllib
 import numpy as np
 import hyperspy.api as hs
 import pandas as pd
@@ -109,6 +110,20 @@ def read_frame_calib(folder,fname,fallback=None,atol=1e-6):
 	if not np.isclose(calib_x, calib_y, atol=atol):
 		raise ValueError(f'Anisotropic calibration in {frame_path}: {calib_x} vs {calib_y}')
 	return calib_x
+
+
+def read_toml_calib(folder, fname, toml_path):
+	'''
+	Calibration (nm/pixel) for a synthetic frame: the descriptive toml's scan_s
+	(frame size, Angstrom) divided by the frame's own pixel count. Recomputed
+	against the real grid, so it tracks the actual image even if it was rebinned.
+	'''
+	with open(toml_path, 'rb') as f:
+		scan_s = tomllib.load(f)['lamella_settings']['scan_s']
+	img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
+	if img.shape[0] != img.shape[1]:
+		raise ValueError(f'non-square frame {img.shape[:2]} for {fname}; calibration assumes square pixels')
+	return (scan_s / 10.0) / img.shape[0]
 
 
 def export_data(folder,sf,fname,lat_params_vec,raw_lat_params,raw_motif,raw_extra_pars,metadata):

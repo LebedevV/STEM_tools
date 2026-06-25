@@ -19,9 +19,10 @@ folder = "./"                    # holds <fname>.tif + detected points
 fname  = "sample_010_haadf"      # stem, no .tif
 
 [calibration]
-source = "sidecar"               # "sidecar" = <fname>_frame.txt | "value"
+source = "sidecar"               # "sidecar" = <fname>_frame.txt | "value" | "frame_size"
 value  = 0.0188                  # nm/pixel, used when source = "value"
-# precedence: --calib (CLI) -> sidecar / value (per source) -> error if neither
+# toml_path = "run.toml"         # source = "frame_size": scan_s (descriptive toml) / actual n_px
+# precedence: --calib (CLI) -> source (sidecar/value/frame_size) -> error if unset
 
 [lattice]
 abg      = [0.32, 1.18, 145.5]   # a, b (nm), gamma (deg)
@@ -71,8 +72,9 @@ passes = [
 
 - **`[io]`** — data directory + stem.
 - **`[calibration]`** — `source = "sidecar"` reads nm/px from `<fname>_frame.txt`
-  via `read_frame_calib`; `"value"` uses the inline constant; CLI `--calib`
-  overrides both.
+  via `read_frame_calib`; `"value"` uses the inline constant; `"frame_size"` recomputes
+  `scan_s / n_px` from a synthetic frame's descriptive toml (the batch sweep sets this
+  per row from the manifest, skipping any frame without one); CLI `--calib` overrides all.
 - **`[lattice]`** — starting `abg`/`base` and their fit flags (defaults; a seed
   sidecar overrides them at runtime).
 - **`motif`** — array of columns. `label` is the dict key; `el` maps to the motif

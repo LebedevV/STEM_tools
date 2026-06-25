@@ -196,3 +196,26 @@ def test_main_rejects_batch_config():
 	batch = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples", "batch_pm3m.toml")
 	with pytest.raises(SystemExit, match="vmap_sweep"):
 		vr.main(["--config", batch])
+
+
+def test_calibration_frame_size_source_needs_path():
+	# source="frame_size" recomputes calib from a descriptive toml -> it must say which one
+	from vmap_config import Calibration
+	with pytest.raises(ValueError, match="needs toml_path"):
+		Calibration(source="frame_size")
+	assert Calibration(source="frame_size", toml_path="run.toml").toml_path == "run.toml"
+
+
+def test_resolve_calib_frame_size_dispatches(monkeypatch):
+	# source="frame_size" routes to read_toml_calib(folder, fname, toml_path)
+	import types
+	seen = {}
+	def fake(folder, fname, toml_path):
+		seen.update(folder=folder, fname=fname, toml_path=toml_path)
+		return 0.0125
+	monkeypatch.setattr(vr, "read_toml_calib", fake)
+	cfg = types.SimpleNamespace(
+		calibration=types.SimpleNamespace(source="frame_size", value=None, toml_path="t.toml"),
+		io=types.SimpleNamespace(fname="frame"))
+	assert vr._resolve_calib(cfg, "fld/", None) == 0.0125
+	assert seen == {"folder": "fld/", "fname": "frame", "toml_path": "t.toml"}
