@@ -188,3 +188,11 @@ def test_detect_save_as_iff_accrete():
 		Detect(ptonn=0.4, imsize=[10.0, 10.0], accrete=True)
 	with pytest.raises(ValueError, match="accrete only"):
 		Detect(ptonn=0.4, imsize=[10.0, 10.0], save_as="{fname}_sub_AB")
+
+
+def test_main_rejects_batch_config():
+	# a batch sweep toml fed to the single-frame runner exits pointing at vmap_sweep,
+	# not a wall of pydantic extra_forbidden errors
+	batch = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples", "batch_pm3m.toml")
+	with pytest.raises(SystemExit, match="vmap_sweep"):
+		vr.main(["--config", batch])

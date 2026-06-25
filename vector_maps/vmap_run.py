@@ -302,6 +302,9 @@ def main(argv=None):
 
     with open(args.config, "rb") as f:
         data = tomllib.load(f)
+    if "manifest" in data or "maps" in data:
+        raise SystemExit(f"{args.config} is a batch sweep config; "
+                         f"run: python vmap_sweep.py --config {args.config}")
     _apply_overrides(data, args.set)
     cfg = AppConfig.model_validate(data)
 
