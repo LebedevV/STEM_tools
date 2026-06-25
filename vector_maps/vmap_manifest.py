@@ -27,14 +27,24 @@ def _blur(s):
 
 
 def _toml_meta(path):
+    # harvest every column-friendly value from the physics sections (+ sample_name) into the
+    # manifest, so downstream analysis never reopens a toml; list/dict fields (detectors,
+    # aberrations, blur_sigmas) don't fit a column and are skipped. frozen_phonons -> phonons
+    # (the name the filter/maps key on).
     if not os.path.exists(path):
         return {}
     with open(path, "rb") as f:
         t = tomllib.load(f)
-    lam, sim = t.get("lamella_settings", {}), t.get("simulations", {})
-    return {"scan_s": lam.get("scan_s"), "thickness": lam.get("thickness"),
-            "borders": lam.get("borders"), "phonons": sim.get("frozen_phonons"),
-            "fph_sigma": sim.get("fph_sigma")}
+    meta = {}
+    for sect in ("microscope", "lamella_settings", "simulations"):
+        meta.update({k: v for k, v in t.get(sect, {}).items()
+                     if isinstance(v, (int, float, str, bool))})
+    sample = t.get("paths", {}).get("sample_name")
+    if sample is not None:
+        meta["sample_name"] = sample
+    if "frozen_phonons" in meta:
+        meta["phonons"] = meta.pop("frozen_phonons")
+    return meta
 
 
 def build_manifest(folder):
@@ -52,6 +62,7 @@ def build_manifest(folder):
                 continue
             toml_path = os.path.join(dirpath, f"{m['sg']}_{m['hkl']}_({m['ta']}, {m['tb']}).toml")
             rows.append({
+                **_toml_meta(toml_path),                 # harvest first; structural keys below win on any name clash
                 "tiff_path": os.path.join(dirpath, name),
                 "source": os.path.relpath(dirpath, folder),
                 "toml_path": toml_path if os.path.exists(toml_path) else "",
@@ -59,17 +70,19 @@ def build_manifest(folder):
                 "tilt_a": float(m["ta"]), "tilt_b": float(m["tb"]),
                 "detector": m["det"], "blur_sigma": _blur(m["blur"]),
                 "is_fph": bool(m["fph"]), "matched_naming": True,
-                **_toml_meta(toml_path),
             })
     return rows, skipped
 
 
 def write_manifest(rows, out):
+    # _COLS first (familiar order), then any harvested params present, sorted
+    extra = sorted({k for r in rows for k in r if k not in _COLS})
+    fieldnames = _COLS + extra
     with open(out, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=_COLS)
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         for r in rows:
-            w.writerow({c: r.get(c, "") for c in _COLS})
+            w.writerow({c: r.get(c, "") for c in fieldnames})
 
 
 def main(argv=None):

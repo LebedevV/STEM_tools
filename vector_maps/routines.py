@@ -112,18 +112,26 @@ def read_frame_calib(folder,fname,fallback=None,atol=1e-6):
 	return calib_x
 
 
-def read_toml_calib(folder, fname, toml_path):
+def calib_from_frame_size(folder,fname,scan_s):
 	'''
-	Calibration (nm/pixel) for a synthetic frame: the descriptive toml's scan_s
-	(frame size, Angstrom) divided by the frame's own pixel count. Recomputed
-	against the real grid, so it tracks the actual image even if it was rebinned.
+	Calibration (nm/pixel) = frame size (scan_s, Angstrom) / the frame's own pixel
+	count. Recomputed against the real grid, so it tracks the actual image even if
+	it was rebinned.
 	'''
-	with open(toml_path, 'rb') as f:
-		scan_s = tomllib.load(f)['lamella_settings']['scan_s']
 	img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
 	if img.shape[0] != img.shape[1]:
 		raise ValueError(f'non-square frame {img.shape[:2]} for {fname}; calibration assumes square pixels')
 	return (scan_s / 10.0) / img.shape[0]
+
+
+def read_toml_calib(folder,fname,toml_path):
+	'''
+	Calibration (nm/pixel) for a synthetic frame: reads scan_s (frame size, Angstrom)
+	from the descriptive toml, divided by the frame's own pixel count.
+	'''
+	with open(toml_path, 'rb') as f:
+		scan_s = tomllib.load(f)['lamella_settings']['scan_s']
+	return calib_from_frame_size(folder, fname, scan_s)
 
 
 def export_data(folder,sf,fname,lat_params_vec,raw_lat_params,raw_motif,raw_extra_pars,metadata):

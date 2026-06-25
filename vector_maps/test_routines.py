@@ -10,7 +10,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from routines import read_toml_calib, resolve_frame_path
+from routines import calib_from_frame_size, read_toml_calib, resolve_frame_path
 
 
 def test_resolves_tiff_variant(tmp_path):
@@ -64,3 +64,12 @@ def test_read_toml_calib_rejects_non_square(tmp_path):
 	cv2.imwrite(os.path.join(folder, "frame.tif"), np.zeros((40, 50), np.float32))
 	with pytest.raises(ValueError, match="non-square"):
 		read_toml_calib(folder, "frame", os.path.join(folder, "f.toml"))
+
+
+def test_calib_from_frame_size_recomputes_from_actual_pixels(tmp_path):
+	# the value path used by the batch sweep: scan_s (A) / n_px, no toml read
+	import cv2
+	import numpy as np
+	folder = os.path.join(str(tmp_path), "")
+	cv2.imwrite(os.path.join(folder, "frame.tif"), np.zeros((40, 40), np.float32))
+	assert calib_from_frame_size(folder, "frame", 50.0) == pytest.approx((50.0 / 10) / 40)

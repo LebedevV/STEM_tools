@@ -198,24 +198,28 @@ def test_main_rejects_batch_config():
 		vr.main(["--config", batch])
 
 
-def test_calibration_frame_size_source_needs_path():
-	# source="frame_size" recomputes calib from a descriptive toml -> it must say which one
+def test_calibration_frame_size_source_needs_one_input():
+	# source="frame_size" needs exactly one of frame_size (value) / toml_path (read it)
 	from vmap_config import Calibration
-	with pytest.raises(ValueError, match="needs toml_path"):
-		Calibration(source="frame_size")
+	for bad in (dict(), dict(frame_size=50.0, toml_path="run.toml")):   # neither / both
+		with pytest.raises(ValueError, match="exactly one"):
+			Calibration(source="frame_size", **bad)
 	assert Calibration(source="frame_size", toml_path="run.toml").toml_path == "run.toml"
+	assert Calibration(source="frame_size", frame_size=50.0).frame_size == 50.0
 
 
 def test_resolve_calib_frame_size_dispatches(monkeypatch):
-	# source="frame_size" routes to read_toml_calib(folder, fname, toml_path)
+	# frame_size (value) -> calib_from_frame_size; else toml_path -> read_toml_calib
 	import types
 	seen = {}
-	def fake(folder, fname, toml_path):
-		seen.update(folder=folder, fname=fname, toml_path=toml_path)
-		return 0.0125
-	monkeypatch.setattr(vr, "read_toml_calib", fake)
-	cfg = types.SimpleNamespace(
-		calibration=types.SimpleNamespace(source="frame_size", value=None, toml_path="t.toml"),
-		io=types.SimpleNamespace(fname="frame"))
-	assert vr._resolve_calib(cfg, "fld/", None) == 0.0125
-	assert seen == {"folder": "fld/", "fname": "frame", "toml_path": "t.toml"}
+	monkeypatch.setattr(vr, "calib_from_frame_size",
+			    lambda folder, fname, scan_s: seen.update(scan_s=scan_s) or 0.0125)
+	monkeypatch.setattr(vr, "read_toml_calib",
+			    lambda folder, fname, toml_path: seen.update(toml_path=toml_path) or 0.02)
+	io = types.SimpleNamespace(fname="frame")
+	val = types.SimpleNamespace(source="frame_size", value=None, frame_size=50.0, toml_path=None)
+	assert vr._resolve_calib(types.SimpleNamespace(calibration=val, io=io), "fld/", None) == 0.0125
+	assert seen["scan_s"] == 50.0
+	tom = types.SimpleNamespace(source="frame_size", value=None, frame_size=None, toml_path="t.toml")
+	assert vr._resolve_calib(types.SimpleNamespace(calibration=tom, io=io), "fld/", None) == 0.02
+	assert seen["toml_path"] == "t.toml"
