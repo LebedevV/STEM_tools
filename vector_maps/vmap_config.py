@@ -89,6 +89,8 @@ class Detect(BaseModel):
     imsize: list[float]                      # nm; required by detect_columns
     pca: bool = False
     subtract_background: bool = True
+    seed: Literal["image", "fit"] = "image"  # "image" = find peaks from scratch; "fit" = seed atomap
+                                             # from the current lattice (reset only; 2D-gaussian refine still runs)
     source: Optional[str] = None             # detect on this image instead of <fname>.tif, e.g. a prior
                                              # detect step's "{fname}_2DG_ptnn_<ptonn>_diff2.tif" residual
     accrete: bool = False                    # False = reset (replace <fname>_xyI.csv, old -> .bckp1/2/3);
@@ -96,11 +98,13 @@ class Detect(BaseModel):
     save_as: Optional[str] = None            # accrete output stem ({fname}/{name} templated); required iff accrete
 
     @model_validator(mode="after")
-    def _save_as_iff_accrete(self):
+    def _modes_consistent(self):
         if self.accrete and not self.save_as:
             raise ValueError("detect: accrete=true needs save_as (the merged-output stem)")
         if self.save_as and not self.accrete:
             raise ValueError("detect: save_as is for accrete only; reset writes <fname>_xyI.csv")
+        if self.seed == "fit" and self.accrete:
+            raise ValueError("detect: seed='fit' re-detects from the lattice (a reset); not for accrete")
         return self
 
 

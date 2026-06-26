@@ -182,11 +182,12 @@ def _rotate_backup(path, keep=3):
     os.replace(path, f"{path}.bckp1")
 
 
-def _run_detect(d, folder, fname, current, name):
+def _run_detect(d, folder, fname, current, name, lat_params, motif, extra_pars, calib):
     # One detection step, composed at the schedule level (see DESIGN.md). The two
     # modes are never crossed:
     #   reset (default): a fresh detection REPLACES <fname>_xyI.csv; the prior one
-    #     rotates to .bckp1/2/3. Returns None -> the next fit reads the canonical csv.
+    #     rotates to .bckp1/2/3 (seed="fit" seeds it from the current lattice instead of
+    #     finding peaks from scratch). Returns None -> the next fit reads the canonical csv.
     #   accrete: detect (typically on d.source, a prior step's _diff2.tif residual),
     #     then concat that detection onto the current working set -- `current` (None ->
     #     canonical) -- with NO dedup (fitted positions must not be merged), into
@@ -205,7 +206,12 @@ def _run_detect(d, folder, fname, current, name):
 
     if not d.accrete:
         _rotate_backup(os.path.join(folder, f"{fname}_xyI.csv"))
-        detect(out_suffix="")
+        if d.seed == "fit":
+            # only the peak-finding is skipped -- detect_columns still 2D-gaussian-refines the seeds
+            redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars,
+                                  gen_ij((-170, 170)), ptonn=d.ptonn, out_suffix="")
+        else:
+            detect(out_suffix="")
         return None
 
     detect(out_suffix=f"_{name}")
@@ -239,7 +245,8 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
                                         # detect concats onto it and sets its save_as stem
     for p in cfg.run.passes:
         if p.detect is not None:
-            dataset = _run_detect(p.detect, folder, fname, dataset, p.name)
+            dataset = _run_detect(p.detect, folder, fname, dataset, p.name,
+                                  lat_params, motif, extra_pars, cal)
             print(f"[{p.name}] detect -> dataset = {dataset}")
             continue
         if p.expand is not None:

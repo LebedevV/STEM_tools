@@ -121,6 +121,8 @@ composed across steps — one detection per step). `imsize` (nm) is required.
 ```toml
 # reset (default): a fresh detection that REPLACES the current measurement
 { name = "detectA", detect = { ptonn = 0.6, imsize = [5.0, 5.0] } }
+# reset, seeded from the current fit: re-detect at the lattice's predicted sites
+{ name = "redetectA", detect = { ptonn = 0.6, imsize = [5.0, 5.0], seed = "fit" } }
 # accrete: detect a B sublattice on A's residual, concat onto the working set
 { name = "detectB", detect = { ptonn = 0.4, imsize = [5.0, 5.0], accrete = true, source = "{fname}_2DG_ptnn_0.6_diff2.tif", save_as = "{fname}_sub_AB" } }
 ```
@@ -128,7 +130,11 @@ composed across steps — one detection per step). `imsize` (nm) is required.
 **reset** (`accrete = false`, default) runs one detection and overwrites
 `<frame>_xyI.csv`, rotating the previous one to `.bckp1`/`.bckp2`/`.bckp3` (oldest
 dropped). The next fit reads the fresh measurement — each reset is an independent,
-reproducible detection (the common case, e.g. re-seeding A).
+reproducible detection (the common case, e.g. re-seeding A). With `seed = "fit"` the
+detection is **seeded from the current lattice** rather than found from scratch: atomap is
+placed at the fitted theoretical sites and 2D-gaussian-refines them — only the initial
+peak-finding is skipped. So a schedule can sharpen positions against the fit:
+detect → fit → detect(`seed = "fit"`) → fit.
 
 **accrete** (`accrete = true`) runs one detection — usually on `source`, a prior step's
 residual `_diff2.tif` (`{fname}`/`{name}` templated) — and **concatenates** it onto the
