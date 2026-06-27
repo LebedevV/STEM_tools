@@ -23,7 +23,7 @@ import numpy as np
 
 from ._log import configure_default_logging
 from .job_io import load_job_config, seed_from_path
-from .pipeline import make_potential, resolve_context
+from .pipeline import cpu_fft_backend, make_potential, resolve_context
 from .simulation import add_probe, add_scan, load_ground_state_atoms
 
 
@@ -120,39 +120,49 @@ def run_scan(cfg, ctx, potential, detector_objs):
 
 
 def run_diffraction(cfg, potential):
-	"""Plane-wave multislice → diffraction patterns. Returns a CPU-side
-	per-snapshot pattern (no ensemble averaging — that's the aggregator's
-	job, since this worker handles a single seed)."""
-	# CPU-side multislice first, then fallback to the potential's native device.
-	pw = abtem.PlaneWave(energy=cfg.microscope.HT_value, device="cpu")
+	"""Plane-wave multislice → diffraction patterns for one seed."""
 	try:
-		exit_waves = pw.multislice(potential.to_cpu()).compute()
+		with abtem.config.set({"device": "cpu", "fft": cpu_fft_backend()}):
+			pw = abtem.PlaneWave(energy=cfg.microscope.HT_value, device="cpu")
+			exit_waves = pw.multislice(potential.to_cpu()).compute()
+			return exit_waves.diffraction_patterns(
+				max_angle="valid", block_direct=True
+			).compute().to_cpu()
 	except Exception:
+		pw = abtem.PlaneWave(energy=cfg.microscope.HT_value)
 		exit_waves = pw.multislice(potential).compute()
-	return exit_waves.diffraction_patterns(
-		max_angle="valid", block_direct=True
-	).compute().to_cpu()
+		return exit_waves.diffraction_patterns(
+			max_angle="valid", block_direct=True
+		).compute().to_cpu()
 
 
 def run_cbed(cfg, ctx, potential):
-	"""Probe-at-center CBED. Returns a CPU-side per-snapshot pattern."""
-	probe = add_probe(cfg, potential)
-
+	"""Probe-at-center CBED for one seed."""
 	center = np.array([[
 		0.5 * (ctx.scan_start[0] + ctx.scan_stop[0]),
 		0.5 * (ctx.scan_start[1] + ctx.scan_stop[1]),
 	]], dtype=float)
 
 	try:
-		exit_waves = probe.multislice(potential.to_cpu(), scan=center).compute()
+		with abtem.config.set({"device": "cpu", "fft": cpu_fft_backend()}):
+			cpu_potential = potential.to_cpu()
+			probe = add_probe(cfg, cpu_potential)
+			exit_waves = probe.multislice(cpu_potential, scan=center).compute()
+			cbed = exit_waves.diffraction_patterns(
+				max_angle=cfg.microscope.cbed_max_angle, block_direct=False
+			)
+			if cbed.ensemble_dims > 0:
+				cbed = cbed.reduce_ensemble()
+			return cbed.compute().squeeze().to_cpu()
 	except Exception:
+		probe = add_probe(cfg, potential)
 		exit_waves = probe.multislice(potential, scan=center).compute()
-	cbed = exit_waves.diffraction_patterns(
-		max_angle=cfg.microscope.cbed_max_angle, block_direct=False
-	)
-	if cbed.ensemble_dims > 0:
-		cbed = cbed.reduce_ensemble()
-	return cbed.compute().squeeze().to_cpu()
+		cbed = exit_waves.diffraction_patterns(
+			max_angle=cfg.microscope.cbed_max_angle, block_direct=False
+		)
+		if cbed.ensemble_dims > 0:
+			cbed = cbed.reduce_ensemble()
+		return cbed.compute().squeeze().to_cpu()
 
 
 # --------------------------------------------------------------------------- #

@@ -18,11 +18,13 @@ Patches applied are recorded in `_PATCHES_APPLIED` for diagnostics:
 Patches:
   1. _partition_args_meta — TEMP: CuPy/Dask metadata workaround. Recheck after
      abTEM's CuPy-related review/fix.
-  2. _fft_dispatch_cufft_numpy — TODO: revisit once the CPU/GPU execution model
-     is settled; this may be better handled locally than by patching abTEM.
-  3. _gaussian_filter_boundary_modes — KEEP until upstreamed: abTEM wraps
+  2. _gaussian_filter_boundary_modes — KEEP until upstreamed: abTEM wraps
      scipy.ndimage.gaussian_filter but restricts boundary modes too narrowly
      for BF-style blurred outputs. Candidate for an upstream PR.
+
+The former _fft_dispatch_cufft_numpy patch is intentionally not applied: CPU-only
+code paths now run under a temporary CPU/FFT config instead of teaching abTEM to
+treat ``fft="cufft"`` as a valid NumPy FFT backend.
 
 TODO: direct module commands such as
 `python -m abTEM_simulations.abtem_run.worker ...` bypass `run.py` and may need
@@ -98,25 +100,6 @@ def apply_abtem_patches() -> dict[str, bool]:
 			attr_name="_partition_args",
 			target="meta=xp.array((), object)",
 			replacement="meta=np.array((), dtype=object)",
-		)
-
-	try:
-		import abtem.core.fft as _ab_fft
-	except ImportError:
-		_PATCHES_APPLIED["_fft_dispatch_cufft_numpy"] = False
-	else:
-		_apply_substitution_patch(
-			name="_fft_dispatch_cufft_numpy",
-			module=_ab_fft,
-			owner=_ab_fft,
-			attr_name="_fft_dispatch",
-			target="        else:\n            raise RuntimeError()",
-			replacement=(
-				"        elif config.get(\"fft\") == \"cufft\":\n"
-				"            return getattr(np.fft, func_name)(x, **kwargs)\n"
-				"        else:\n"
-				"            raise RuntimeError()"
-			),
 		)
 
 	try:

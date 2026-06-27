@@ -10,8 +10,6 @@ from itertools import product
 
 import abtem
 
-# Importing the package runs abtem monkey-patches in __init__.py before any
-# abtem calls happen in this module.
 from .config import AppConfig
 
 
@@ -34,6 +32,19 @@ class RunContext:
 
 	# Keep the dask client alive for the run.
 	dask_client: object | None
+
+
+def cpu_fft_backend() -> str:
+	"""Return a CPU FFT backend accepted by abTEM for NumPy arrays."""
+	try:
+		import abtem.core.fft as _fft
+	except ImportError:
+		return "numpy"
+	if getattr(_fft, "pyfftw", None) is not None:
+		return "fftw"
+	if getattr(_fft, "mkl_fft", None) is not None:
+		return "mkl"
+	return "numpy"
 
 
 def _as_list(v):
@@ -100,7 +111,7 @@ def resolve_context(cfg):
 		abtem.config.set({"dask.chunk-size-gpu" : cfg.gpu_related.dask_chunk_size_gpu})
 		import cupy as cp
 	else:
-		abtem.config.set({"device": "cpu", "fft": "fftw", 'dask.lazy': True})
+		abtem.config.set({"device": "cpu", "fft": cpu_fft_backend(), 'dask.lazy': True})
 
 	abtem.config.set({"dask.chunk-size" : cfg.gpu_related.dask_chunk_size})
 
