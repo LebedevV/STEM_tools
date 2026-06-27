@@ -80,22 +80,6 @@ def _seed_list_from_cfg(cfg_dict: dict[str, Any]) -> list[int]:
     return list(range(seed_start, seed_start + n))
 
 
-def _iter_hkls(cfg_dict: dict[str, Any]) -> list[list[int]]:
-    job = cfg_dict["job"]
-    h = job["hkl_to_do"]
-    if isinstance(h, list) and len(h) == 3 and all(isinstance(x, int) for x in h):
-        return [h]
-    return h  # already validated as list[list[int]]
-
-
-def _tilt_str(cfg_dict: dict[str, Any]) -> str:
-    ls = cfg_dict["lamella_settings"]
-    a = float(ls["global_tilt_a"])
-    b = float(ls["global_tilt_b"])
-    # stable, filesystem-friendly
-    return f"ta{a}_tb{b}".replace(" ", "")
-
-
 def _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
     """3-panel atom view (XY / XZ / YZ) with the scan box overlaid on XY.
     Cheap — no GPU, no abtem multislice. Just matplotlib + ase + abtem.show_atoms.
@@ -132,19 +116,6 @@ def _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir: Path) -> None
     plt.close(fig)
 
 
-def _emit_planning_artifacts(cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
-    """Build the lamella and emit surf.xyz + combined.png at planning time.
-
-    Cheap (matplotlib + ase + dask CPU, no GPU multislice), useful as a
-    sanity check before committing GPU time to the workers.
-    """
-    lamella = build_lamella_from_config(cfg_frame, hkl)
-    # extxyz preserves the cell box; plain xyz drops it and downstream
-    # Potential construction crashes on box[2]=0 (division by zero).
-    ase.io.write(str(job_dir / "surf.xyz"), lamella, "extxyz")
-    _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir)
-
-
 def _tagval(v) -> str:
     """Filesystem-friendly stringification of a sweep value (10.0 -> '10')."""
     if isinstance(v, float):
@@ -174,7 +145,6 @@ def _frame_sweep_tags(frames) -> list[str]:
 def generate_run(config_path: Path = Path("config.toml")) -> Path:
     cfg0 = confread.load_config(config_path)
     frames = list(expand_cfg(cfg0))
-    # Per-frame stem suffix so non-tilt sweep axes don't collide (see helper).
     sweep_tags = _frame_sweep_tags(frames)
 
     out_root = cfg0.paths.output_root
@@ -194,26 +164,27 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
     for frame_idx, cfg_frame in enumerate(frames):
         cfg_dict = cfg_frame.model_dump()
 
-        # phase can be a single string OR a list. Normalize and iterate;
-        # each phase becomes its own job dir(s) with locked seed integers
-        # across phases for direct phase-vs-phase comparisons.
         raw_phase = cfg_dict["job"]["phase"]
         phase_iter = raw_phase if isinstance(raw_phase, list) else [str(raw_phase)]
         is_uvw = bool(cfg_dict["job"]["is_uvw"])
-        hkls = _iter_hkls(cfg_dict)
+
+        hkl_to_do = cfg_dict["job"]["hkl_to_do"]
+        hkls = (
+            [hkl_to_do]
+            if len(hkl_to_do) == 3 and all(isinstance(x, int) for x in hkl_to_do)
+            else hkl_to_do
+        )
+
+        ls = cfg_dict["lamella_settings"]
+        tilt = f"ta{float(ls['global_tilt_a'])}_tb{float(ls['global_tilt_b'])}".replace(" ", "")
         seeds = _seed_list_from_cfg(cfg_dict)
-        tilt = _tilt_str(cfg_dict)
 
         for phase in phase_iter:
             phase = str(phase)
             phase_name = _phase_stem(phase)
 
-            # For each HKL, create an independent "job folder"
             for hkl in hkls:
                 line_hkl = "".join(str(x) for x in hkl)
-
-                # This is the naming analogue of: f"{sg}_{line_hkl}_{ctx.global_tilt}.toml"
-                # We use (phase, line_hkl, tilt) because sg isn't known until CIF is parsed.
                 stem = f"{phase_name}_{line_hkl}_{tilt}{sweep_tags[frame_idx]}"
 
                 job_dir = run_dir / stem
@@ -221,10 +192,7 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
                 (job_dir / "outputs").mkdir(parents=True, exist_ok=True)
                 (job_dir / "aggregate").mkdir(parents=True, exist_ok=True)
 
-                # Write job-local TOML. Scalarize hkl_to_do AND phase so the
-                # job dir carries a single direction and a single CIF (the
-                # worker rebuilds the lamella from cfg.job.hkl_list[0] +
-                # cfg.job.phase, and expects scalars).
+                # Job-local TOML is scalarized to one phase and one direction.
                 job_cfg_dict = dict(cfg_dict)
                 job_cfg_dict["job"] = dict(cfg_dict["job"])
                 job_cfg_dict["job"]["hkl_to_do"] = hkl
@@ -232,12 +200,12 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
                 cfg_out_path = job_dir / f"{stem}.toml"
                 _atomic_write_toml(cfg_out_path, job_cfg_dict)
 
-                # Planning artifacts: surf.xyz + combined.png. Cheap, no GPU.
-                # Use the per-phase cfg_frame so make_lamella reads the right CIF.
                 cfg_frame_for_phase = confread.AppConfig.model_validate(job_cfg_dict)
-                _emit_planning_artifacts(cfg_frame_for_phase, hkl, line_hkl, job_dir)
+                lamella = build_lamella_from_config(cfg_frame_for_phase, hkl)
+                # extxyz preserves the cell box; plain xyz drops it.
+                ase.io.write(str(job_dir / "surf.xyz"), lamella, "extxyz")
+                _emit_combined_png(lamella, cfg_frame_for_phase, hkl, line_hkl, job_dir)
 
-                # Create one .todo per seed (or seed 0 baseline if no phonons).
                 for s in seeds:
                     write_seed_todo(job_dir / "seeds", s, replace=True)
 

@@ -32,13 +32,6 @@ def load_job_config(job_dir) -> tuple[Path, AppConfig]:
 	return toml_candidates[0], load_config(toml_candidates[0])
 
 
-def seed_file_name(seed: int, state: str) -> str:
-	"""Return ``seed_NNNNNN.<state>`` for a seed-state filename."""
-	if state not in SEED_STATES:
-		raise ValueError(f"unknown seed state {state!r}; expected one of {sorted(SEED_STATES)}")
-	return f"{SEED_PREFIX}{int(seed):0{SEED_WIDTH}d}.{state}"
-
-
 def seed_from_path(path) -> int:
 	"""Parse the seed integer from ``seed_NNNNNN...`` filenames.
 
@@ -127,7 +120,7 @@ def write_seed_todo(seeds_dir: Path, seed: int, *, replace: bool = False) -> Pat
 	"""
 	seeds_dir = Path(seeds_dir)
 	seeds_dir.mkdir(parents=True, exist_ok=True)
-	todo = seeds_dir / seed_file_name(seed, "todo")
+	todo = seeds_dir / f"{SEED_PREFIX}{int(seed):0{SEED_WIDTH}d}.todo"
 	if not replace and todo.exists():
 		raise FileExistsError(todo)
 	tmp = todo.with_suffix(todo.suffix + ".tmp")

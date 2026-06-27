@@ -62,7 +62,11 @@ def _install_preemption_handler(
 		)
 		_cleanup_seed_outputs(out_dir, seed)
 		if todo_path is not None and running_path is not None:
-			_requeue_running(todo_path, running_path)
+			try:
+				if running_path.exists() and not todo_path.exists():
+					running_path.rename(todo_path)
+			except OSError:
+				pass
 		# Re-raise with the original signal semantics.
 		signal.signal(signum, signal.SIG_DFL)
 		signal.raise_signal(signum)
@@ -82,41 +86,6 @@ def _install_preemption_handler(
 # --------------------------------------------------------------------------- #
 
 
-def _claim_todo(todo_path: Path) -> Path:
-	"""Atomically claim ``seed_NNNNNN.todo`` as ``seed_NNNNNN.running``.
-
-	This prevents two parallel workers from accidentally processing the same
-	seed. A missing ``.todo`` with an existing ``.running`` or ``.done`` is
-	reported as an already-claimed/already-finished seed rather than silently
-	starting duplicate work.
-	"""
-	running_path = todo_path.with_suffix(".running")
-	done_path = todo_path.with_suffix(".done")
-	try:
-		todo_path.rename(running_path)
-	except FileNotFoundError as e:
-		if running_path.exists():
-			raise FileExistsError(f"seed already claimed: {running_path}") from e
-		if done_path.exists():
-			raise FileExistsError(f"seed already completed: {done_path}") from e
-		raise
-	return running_path
-
-
-def _requeue_running(todo_path: Path, running_path: Path) -> None:
-	"""Best-effort rollback from ``.running`` to ``.todo`` after failure.
-
-	If the process is killed too hard for Python cleanup to run, the ``.running``
-	file is intentionally left behind as a visible stale claim that can be
-	requeued manually after checking the worker is gone.
-	"""
-	try:
-		if running_path.exists() and not todo_path.exists():
-			running_path.rename(todo_path)
-	except OSError:
-		pass
-
-
 def _displaced_atoms(atoms, sigmas, seed: int):
 	"""Per-seed phonon displacement, or atoms unchanged for σ ≤ 0 / None / False.
 
@@ -133,19 +102,6 @@ def _displaced_atoms(atoms, sigmas, seed: int):
 	return fph.to_atoms_ensemble().trajectory[0]
 
 
-def _detector_objects(ctx, names):
-	"""Map ``["haadf", "abf", "bf"]`` → the AnnularDetector instances on ctx.
-
-	Order is preserved so the output filenames match the user's intent.
-	"""
-	table = {
-		"haadf": ctx.haadf_detector,
-		"abf": ctx.abf_detector,
-		"bf": ctx.bf_detector,
-	}
-	return [table[n] for n in names]
-
-
 def run_scan(ctx, potential, detector_objs):
 	"""Probe.scan over the lamella with the requested detectors.
 
@@ -153,8 +109,7 @@ def run_scan(ctx, potential, detector_objs):
 	``detector_objs``. Normalises the single-detector case (abtem returns
 	a single ensemble there, not a 1-element list).
 	"""
-	# Reuse the proven probe/scan builders (single source of truth, shared
-	# shared with the aggregator projection preview).
+	# Probe and scan construction is shared with projection previews.
 	probe = add_probe(ctx, potential)
 	scan = add_scan(ctx, probe, potential)
 
@@ -233,7 +188,16 @@ def run_one_seed(job_dir, todo_path) -> None:
 	todo_path = Path(todo_path).resolve()
 
 	seed = seed_from_path(todo_path)
-	running_path = _claim_todo(todo_path)
+	running_path = todo_path.with_suffix(".running")
+	done_path = todo_path.with_suffix(".done")
+	try:
+		todo_path.rename(running_path)
+	except FileNotFoundError as e:
+		if running_path.exists():
+			raise FileExistsError(f"seed already claimed: {running_path}") from e
+		if done_path.exists():
+			raise FileExistsError(f"seed already completed: {done_path}") from e
+		raise
 
 	try:
 		_, cfg = load_job_config(job_dir)
@@ -242,27 +206,15 @@ def run_one_seed(job_dir, todo_path) -> None:
 		out_dir = job_dir / "outputs"
 		out_dir.mkdir(parents=True, exist_ok=True)
 
-		# Preemption guard: SIGTERM (spot 2-minute warning) or SIGINT cleans the
-		# partial seed_NNNNNN_* outputs before exit so the aggregator can't pick
-		# up a half-written zarr. The .running claim is requeued to .todo on a
-		# best-effort basis. The try/finally ensures the guard is uninstalled on
-		# both the success path and any exception, so a caller looping over .todos
-		# doesn't carry a stale handler into the next seed.
+		# Signals clean partial outputs and requeue the claim when Python can run cleanup.
 		restore_handlers = _install_preemption_handler(
 			out_dir, seed, todo_path=todo_path, running_path=running_path,
 		)
 		try:
-			# 1) Static (deterministic) lamella — read job_dir/surf.xyz (written by
-			#    the generator) so worker, aggregator, and planning all see the same
-			#    atoms. Falls back to a fresh build with a WARNING if surf.xyz is
-			#    missing or unreadable.
 			lamella = load_ground_state_atoms(job_dir, cfg)
-
-			# 2) Per-seed phonon displacement.
 			displaced = _displaced_atoms(lamella, ctx.fph_sigma, seed)
 
-			# 3) Test mode: dump the displaced atoms BEFORE multislice
-			#    (so a crashed run still leaves the displacements inspectable).
+			# Test mode leaves the displacement inspectable even if multislice fails.
 			if ctx.test_enabled:
 				ase.io.write(
 					str(out_dir / f"seed_{seed:06d}_displaced.xyz"),
@@ -270,36 +222,30 @@ def run_one_seed(job_dir, todo_path) -> None:
 					"xyz",
 				)
 
-			# 4) Build the per-seed Potential.
 			potential = make_potential(displaced).build().compute()
 
-			# 5) Projected potential of THIS seed's displaced lattice - i.e. the exact
-			#    potential the multislice below propagates through. Written per seed
-			#    (always, regardless of do_full_run) so the aggregator can mean it
-			#    across seeds like the scan channels; the result then matches what was
-			#    simulated rather than an idealised static lattice. With do_full_run
-			#    off (and diffraction/cbed off) this is the only output - a cheap
-			#    projection-only preview.
+			# Always write the projected potential used by this seed.
 			proj = potential.project().to_cpu().compute()
 			proj.to_tiff(str(out_dir / f"seed_{seed:06d}_potproj.tif"))
 			proj.to_zarr(str(out_dir / f"seed_{seed:06d}_potproj.zarr"), overwrite=True)
 
-			# 6) Optional plane-wave diffraction. Write .zarr too - the aggregator
-			#    means seed_*_<channel>.zarr across seeds; .tif is for eyeballing.
 			if ctx.do_diffraction:
 				diff = run_diffraction(ctx, potential)
 				diff.to_tiff(str(out_dir / f"seed_{seed:06d}_diff.tif"))
 				diff.to_zarr(str(out_dir / f"seed_{seed:06d}_diff.zarr"), overwrite=True)
 
-			# 7) Optional CBED.
 			if ctx.do_cbed:
 				cbed = run_cbed(ctx, potential)
 				cbed.to_tiff(str(out_dir / f"seed_{seed:06d}_cbed.tif"))
 				cbed.to_zarr(str(out_dir / f"seed_{seed:06d}_cbed.zarr"), overwrite=True)
 
-			# 8) Optional scan (the main per-seed output).
 			if ctx.do_full_run and ctx.detectors:
-				detector_objs = _detector_objects(ctx, ctx.detectors)
+				detectors_by_name = {
+					"haadf": ctx.haadf_detector,
+					"abf": ctx.abf_detector,
+					"bf": ctx.bf_detector,
+				}
+				detector_objs = [detectors_by_name[n] for n in ctx.detectors]
 				measurements = run_scan(ctx, potential, detector_objs)
 				for det_name, m in zip(ctx.detectors, measurements):
 					cpu = m.copy().to_cpu()
@@ -310,14 +256,14 @@ def run_one_seed(job_dir, todo_path) -> None:
 			restore_handlers()
 
 	except BaseException:
-		_requeue_running(todo_path, running_path)
+		try:
+			if running_path.exists() and not todo_path.exists():
+				running_path.rename(todo_path)
+		except OSError:
+			pass
 		raise
 
-	# 9) Mark this seed done — only after the handlers are restored, so a late
-	#    SIGTERM can't clean the finished outputs once the .running claim is
-	#    already .done (deleting a complete, now-unreclaimable seed). Atomic rename
-	#    keeps a polling aggregator's view coherent.
-	done_path = todo_path.with_suffix(".done")
+	# Mark done after the signal handler is restored; completed outputs are no longer reclaimable.
 	running_path.rename(done_path)
 
 
