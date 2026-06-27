@@ -111,8 +111,8 @@ def main():
 			"Local serial driver for abtem_run. "
 			"Generates the per-seed work queue from the TOML config, then "
 			"runs all workers serially and aggregates each job. "
-			"For parallel execution, call `python -m abtem_run.worker` / "
-			"`python -m abtem_run.aggregate` directly."
+			"For parallel execution, run `abtem-run-worker` / `abtem-run-aggregate` "
+			"from the deployment image, whose abTEM is patched at build."
 		),
 	)
 	parser.add_argument(

@@ -1,8 +1,9 @@
 # Dockerfile for the abtem-run worker pipeline.
 #
-# Pins abtem 1.0.9 (the conditional monkey-patches in abtem_run/__init__.py
-# target specific 1.0.9 source substrings) and CUDA 13.x runtime (pairs
-# with the gpu-cu13 pyproject extra: cupy-cuda13x + dask-cuda).
+# Pins abtem 1.0.9 and bakes abtem_run's compat shims into the installed abTEM
+# source at build (the shims target specific 1.0.9 substrings; see the
+# patch_abtem_source step below). CUDA 13.x runtime pairs with the gpu-cu13
+# pyproject extra: cupy-cuda13x + dask-cuda.
 #
 # Build context = repo root, so the build can reach LICENSE at the root
 # alongside abTEM_simulations/:
@@ -56,10 +57,11 @@ RUN python3.11 -m pip install --no-cache-dir ".[gpu-cu13]"
 # lets the import succeed without the cuda-bindings package (applies at runtime too).
 ENV NUMBA_CUDA_USE_NVIDIA_BINDING=0
 
-# Build-time gate: fail the build if the abtem monkey-patches did not bind. A
-# drifted abtem would silently no-op (_PATCHES_APPLIED records the miss) and the
-# GPU paths fail only at runtime on a spot node. Imports fine without a GPU.
-RUN python3.11 -c "import abtem_run, sys; sys.exit(0 if all(abtem_run._PATCHES_APPLIED.values()) else 1)"
+# Bake the abtem_run compat shims into abTEM's installed source so every process
+# in the image gets a correct abTEM with no runtime shimming, and FAIL the build
+# if any shim did not bind (a drifted abtem would otherwise fail only at runtime
+# on a spot node). Patching only rewrites source, so this needs no GPU.
+RUN python3.11 -c "from abtem_run.compat import patch_abtem_source; import sys; r = patch_abtem_source(); sys.exit(0 if r and all(r.values()) else 1)"
 
 # Caches default to $HOME; with `docker run --user <uid>` (no matching passwd
 # entry) HOME resolves to '/', which arbitrary users can't write -> cupy / numba /

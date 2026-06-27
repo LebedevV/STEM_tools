@@ -152,6 +152,44 @@ def apply_abtem_patches() -> dict[str, bool]:
 	return dict(_PATCHES_APPLIED)
 
 
+def patch_abtem_source() -> dict[str, bool]:
+	"""Bake the shims into abTEM's installed source files, for a Docker/AWS image.
+
+	Unlike ``apply_abtem_patches`` (in-memory, per-process), this rewrites abTEM's
+	``.py`` files on disk so every process in the image gets a correct abTEM with
+	no runtime shimming. Build-time only — not the local/dev path. Reuses the same
+	``_PATCH_SPECS``. Returns per-shim status; ``False`` when the target is absent
+	(already-correct or drifted abTEM).
+	"""
+	from pathlib import Path
+
+	results: dict[str, bool] = {}
+	for spec in _PATCH_SPECS:
+		try:
+			module = importlib.import_module(spec["module"])
+			fn = getattr(getattr(module, spec["owner"]), spec["attr"])
+			path = inspect.getsourcefile(fn)
+			lines, start = inspect.getsourcelines(fn)
+		except (ImportError, AttributeError, TypeError, OSError):
+			results[spec["name"]] = False
+			continue
+
+		dedented = textwrap.dedent("".join(lines))
+		if path is None or spec["target"] not in dedented:
+			results[spec["name"]] = False
+			continue
+
+		base = lines[0][: len(lines[0]) - len(lines[0].lstrip())]
+		patched_block = textwrap.indent(
+			dedented.replace(spec["target"], spec["replacement"]), base
+		)
+		file_lines = Path(path).read_text().splitlines(keepends=True)
+		file_lines[start - 1 : start - 1 + len(lines)] = [patched_block]
+		Path(path).write_text("".join(file_lines))
+		results[spec["name"]] = True
+	return results
+
+
 def ensure_patched_environment(assume_yes: bool | None = None) -> None:
 	"""Consent-gated application of the compat shims, for the user CLI.
 
@@ -197,6 +235,7 @@ def ensure_patched_environment(assume_yes: bool | None = None) -> None:
 
 __all__ = [
 	"apply_abtem_patches",
+	"patch_abtem_source",
 	"detect_applicable_patches",
 	"ensure_patched_environment",
 	"_PATCHES_APPLIED",
