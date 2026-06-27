@@ -14,7 +14,8 @@ import tomllib
 # e.g. Pm3m_(25.0, 10.0)_110_haadf_0-25.tif  |  fph_Pm3m_(25.0, 5.0)_110_abf.tif
 _TIFF = re.compile(
     r"^(?P<fph>fph_)?(?P<sg>[^_]+)_\((?P<ta>[-\d.]+),\s*(?P<tb>[-\d.]+)\)_"
-    r"(?P<hkl>[^_]+)_(?P<det>haadf|abf|bf)(?P<blur>(?:_[\d-]+)?)\.tif$"
+    r"(?P<hkl>[^_]+)_(?P<det>haadf|abf|bf)(?P<blur>(?:_[\d-]+)?)\.tiff?$",
+    re.IGNORECASE,
 )
 
 _COLS = ["tiff_path", "source", "toml_path", "sg", "hkl", "tilt_a", "tilt_b", "detector",
@@ -50,6 +51,8 @@ def _toml_meta(path):
 def build_manifest(folder):
     # walk the whole tree so one root covering several run folders yields one manifest;
     # source = the frame's dir relative to the root (groups the otherwise-identical frames).
+    # Store file paths as absolute paths so the manifest remains usable from any cwd.
+    folder = os.path.abspath(folder)
     rows, skipped = [], []
     for dirpath, dirnames, filenames in os.walk(folder):
         dirnames.sort()
@@ -68,7 +71,7 @@ def build_manifest(folder):
                 "toml_path": toml_path if os.path.exists(toml_path) else "",
                 "sg": m["sg"], "hkl": m["hkl"],
                 "tilt_a": float(m["ta"]), "tilt_b": float(m["tb"]),
-                "detector": m["det"], "blur_sigma": _blur(m["blur"]),
+                "detector": m["det"].lower(), "blur_sigma": _blur(m["blur"]),
                 "is_fph": bool(m["fph"]), "matched_naming": True,
             })
     return rows, skipped

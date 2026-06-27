@@ -127,13 +127,11 @@ def calib_from_frame_size(folder,fname,scan_s):
 def read_toml_calib(folder,fname,toml_path):
 	'''
 	Calibration (nm/pixel) for a synthetic frame: reads scan_s (frame size, Angstrom)
-	from the descriptive toml, divided by the frame's own pixel count.  Relative paths
-	are used as written when they exist, otherwise resolved inside folder.
+	from the descriptive toml, divided by the frame's own pixel count.  toml_path is
+	used exactly as supplied; manifest-generated paths are absolute.
 	'''
 	if toml_path is None:
 		raise ValueError('toml_path is required for toml-derived calibration')
-	if not os.path.isabs(toml_path) and not os.path.exists(toml_path):
-		toml_path = os.path.join(folder, toml_path)
 	with open(toml_path, 'rb') as f:
 		scan_s = tomllib.load(f)['lamella_settings']['scan_s']
 	return calib_from_frame_size(folder, fname, scan_s)

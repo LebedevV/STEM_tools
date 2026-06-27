@@ -40,9 +40,7 @@ def _select(df, flt):
 
 def _run_row(row, fit_cfg_path, retries):
     folder = os.path.join(os.path.dirname(str(row["tiff_path"])), "")
-    stem = os.path.basename(str(row["tiff_path"]))
-    if stem.endswith(".tif"):
-        stem = stem[:-4]
+    stem = os.path.splitext(os.path.basename(str(row["tiff_path"])))[0]
     with open(fit_cfg_path, "rb") as f:
         data = tomllib.load(f)
     data.setdefault("io", {})["folder"] = folder
