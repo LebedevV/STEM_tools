@@ -21,6 +21,33 @@ from matplotlib.widgets import Slider, Button, CheckButtons
 
 max_lim=(1000,1000)
 
+def resolve_sub_area(sub_area, frame_lim):
+	"""Resolve an optional fit sub-area against the current frame size in nm.
+
+	Negative bounds are interpreted as offsets from the far frame edge, so
+	[0.5, -0.5, 0.5, -0.5] means a 0.5 nm margin on all sides.
+	"""
+	if sub_area is None:
+		return None
+	if len(sub_area) != 4:
+		raise ValueError('sub_area must be [xmin, xmax, ymin, ymax]')
+	xmin, xmax, ymin, ymax = [float(i) for i in sub_area]
+	width, height = frame_lim
+	if xmin < 0:
+		xmin = width + xmin
+	if xmax < 0:
+		xmax = width + xmax
+	if ymin < 0:
+		ymin = height + ymin
+	if ymax < 0:
+		ymax = height + ymax
+	if xmax <= xmin or ymax <= ymin:
+		raise ValueError(
+			'resolved sub_area is empty: %s from %s and frame %.6g x %.6g nm'
+			% ([xmin, xmax, ymin, ymax], sub_area, width, height)
+		)
+	return [xmin, xmax, ymin, ymax]
+
 def gen_ij(ij_range):
 	
 	i_range = np.arange(ij_range[0],ij_range[1])
@@ -500,7 +527,7 @@ def _redetect_scratch(image, folder, fname, calib, out_suffix="_scratch"):
 
 
 def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall_zero=False,show_initial_spots=False,vec_scale=0.05,
-			do_fit=True,relative_to=None,kernel=4,shift_ab=None,do_fft_align=False,do_fft_prefit=False,sub_area=None,max_dist=0,export_sublattice_xy=False,dataset_fname=None):
+			do_fit=True,relative_to=None,kernel=4,shift_ab=None,do_fft_align=False,do_fft_prefit=False,sub_area=None,max_dist=0,export_sublattice_xy=False,dataset_fname=None,plot_full_lattice=False):
 	if extra_pars is None:
 		extra_pars = {}
 	if not do_fit:
@@ -509,6 +536,11 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 		
 	s = load_frame(folder,fname,calib)
 	dataset = load_dataset_auto(folder, dataset_fname if dataset_fname is not None else fname)
+	_frame_img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
+	if _frame_img is None:
+		raise FileNotFoundError(resolve_frame_path(folder, fname))
+	_frame_lim = (_frame_img.shape[1] * calib, _frame_img.shape[0] * calib)
+	sub_area = resolve_sub_area(sub_area, _frame_lim)
 	#dataset = np.load(folder+fname.split('.')[0]+'.npy').T
 	#dataset = load_dataset_auto(folder, fname)
 
@@ -541,7 +573,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 		
 		zeros,_,_ = get_coords_from_ij(ij_cr,param_vec_zeros,max_lim,lat_params, m_zeros, extra_pars,crop=False)
 		
-		_im = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
+		_im = _frame_img
 		H, W = _im.shape[:2]
 		
 		fig, ax = plt.subplots(figsize=(6, 4))
@@ -695,6 +727,8 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 	metadata['refined'] = do_fit
 	metadata['relative'] = relative_to
 	metadata['atoms_used'] = len(obs_cr)
+	metadata['sub_area'] = sub_area
+	metadata['plot_full_lattice'] = bool(plot_full_lattice)
 
 	#metadata['std'] = std
 
@@ -754,6 +788,16 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 	
 	#refined_lat = am.Sublattice(np.array(theor_res)/calib, image=s, color='r') #refined full
 	refined_rel_lat = am.Sublattice(np.array(theor_res_rel)/calib, image=s, color='r') #refined filtered to paired ones
+	refined_plot_lat = refined_rel_lat
+	if plot_full_lattice:
+		# Rebuild the theoretical lattice after refinement and crop it to the actual
+		# frame. This intentionally does not reuse the paired/cropped ij set from
+		# fitting, so an inner-area fit can still be visualised over the full frame.
+		ij_full = gen_ij((-170, 170))
+		theor_full, _, _ = get_coords_from_ij(ij_full, param_vec.copy(), _frame_lim,
+						lat_params, motif, extra_pars, crop=True)
+		if len(theor_full) > 0:
+			refined_plot_lat = am.Sublattice(np.asarray(theor_full)/calib, image=s, color='r')
 
 
 	#lat_params_fin,_ = unpack_vector(param_vec,lat_params,motif)
@@ -822,7 +866,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 
 		if relative_to is None:	
 			#plot_lattice(s,[obs_lat,theor_lat],fname,folder,sf,'initial_guess_full_'+sf)
-			plot_lattice(s,[obs_lat,refined_rel_lat],fname,folder,sf,'fit_'+sf)
+			plot_lattice(s,[obs_lat,refined_plot_lat],fname,folder,sf,'fit_'+sf)
 		
 		
 		file_s = folder + sf + '/' +sf

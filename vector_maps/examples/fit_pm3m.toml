@@ -1,15 +1,14 @@
-# Pm3m perovskite (hkl 110) — PLACEHOLDER lattice/motif; needs GUI-tuning + detected
-# points to produce real fits. io.folder/io.fname are overridden per row by the sweep.
+# Pm3m perovskite (hkl 110) — batch-oriented A/B workflow.
+# io.folder/io.fname and calibration.toml_path are supplied per row by the sweep.
 [io]
 folder = "./"
 fname  = "placeholder"
 
 [calibration]
 source = "toml"
-#value  = 0.0188                  # nm/pixel (placeholder)
 
 [lattice]
-abg      = [0.4, 0.4, 90.0]      # cubic ~0.4 nm projected (placeholder)
+abg      = [0.4, 0.4, 90.0]
 base     = [0.0, 0.0, 0.0]
 fit_abg  = [true, true, true]
 fit_base = [true, true, true]
@@ -19,25 +18,87 @@ label = "A_1"
 el    = "Pb"
 coord = [0.0, 0.0]
 fit   = [false, false]
+use   = true
 
 [[motif]]
 label = "B_1"
 el    = "Zr"
 coord = [0.0, 0.5]
 fit   = [true, true]
+use   = false
 
 [run]
 gui  = false
 seed = false
+save_stem = "{fname}_{name}"
 
-passes = [
-  { name = "detectA", detect = { ptonn = 0.6, imsize = [16.0, 16.0], sep = 10 } },
-  { name = "fitA",    sub_area = [0.5, 4.5, 0.5, 4.5], vec_scale = 0.2, max_dist = 0.1 },
-  { name = "detectA_prefit", detect = { ptonn = 0.6, imsize = [16.0, 16.0], sep = 10 } },
-  # accrete: detect B on detectA's residual, concat onto the working set -> {fname}_sub_AB_xyI.csv
-  { name = "detectB", detect = { ptonn = 0.4, imsize = [16.0, 16.0], sep = 8 , accrete = true, source = "{fname}_2DG_ptnn_0.6_diff2.tif", save_as = "{fname}_sub_AB" } },
-  { name = "fitAB",   sub_area = [0.5, 4.5, 0.5, 4.5], vec_scale = 0.25, max_dist = 0.1, save = true, fit = { B_1 = [true, true] } },
-  { name = "prefit", sub_area = [1.0,4.0,1.0,4.0], vec_scale = 0.1, max_dist = 0.1 },
-  { name = "free",   sub_area = [0.5,4.5,0.5,4.5], vec_scale = 0.25, max_dist = 0.1, save = true, fit = { B_1 = [true,true] } },
-]
+[[run.passes]]
+name = "detectA0"
+use = { A_1 = true, B_1 = false }
+detect = { ptonn = 0.6, imsize = [16.0, 16.0], sep = 10 }
 
+[[run.passes]]
+name = "fitA0"
+use = { A_1 = true, B_1 = false }
+sub_area = [0.5, -0.5, 0.5, -0.5]
+plot_full_lattice = true
+vec_scale = 0.2
+max_dist = 0.1
+save = true
+export_sublattice_xy = true
+
+[[run.passes]]
+name = "redetectA1"
+use = { A_1 = true, B_1 = false }
+detect = { seed = "fit", ptonn = 0.6, imsize = [16.0, 16.0], sep = 10 }
+
+[[run.passes]]
+name = "fitA1"
+use = { A_1 = true, B_1 = false }
+sub_area = [0.5, -0.5, 0.5, -0.5]
+plot_full_lattice = true
+vec_scale = 0.2
+max_dist = 0.1
+save = true
+export_sublattice_xy = true
+
+# Detect B on the A-subtracted residual and accrete it onto the current A table.
+[[run.passes]]
+name = "detectB1"
+use = { A_1 = false, B_1 = true }
+detect = { ptonn = 0.4, imsize = [16.0, 16.0], sep = 8, accrete = true, source = "{fname}_2DG_ptnn_0.6_diff2.tif", save_as = "{fname}_sub_AB1" }
+
+[[run.passes]]
+name = "fitB1"
+use = { A_1 = false, B_1 = true }
+sub_area = [0.5, -0.5, 0.5, -0.5]
+plot_full_lattice = true
+vec_scale = 0.2
+max_dist = 0.1
+save = true
+fit = { A_1 = [false, false], B_1 = [true, true], abg = [false, false, false], base = [false, false, false] }
+
+[[run.passes]]
+name = "fitAB1"
+use = { A_1 = true, B_1 = true }
+sub_area = [0.5, -0.5, 0.5, -0.5]
+plot_full_lattice = true
+vec_scale = 0.25
+max_dist = 0.1
+save = true
+fit = { A_1 = [false, false], B_1 = [true, true], abg = [true, true, true], base = [true, true, true] }
+
+[[run.passes]]
+name = "redetectAB2"
+use = { A_1 = true, B_1 = true }
+detect = { seed = "fit", ptonn = 0.6, imsize = [16.0, 16.0], sep = 10 }
+
+[[run.passes]]
+name = "fitAB2"
+use = { A_1 = true, B_1 = true }
+sub_area = [0.5, -0.5, 0.5, -0.5]
+plot_full_lattice = true
+vec_scale = 0.25
+max_dist = 0.1
+save = true
+fit = { A_1 = [true, true], B_1 = [true, true], abg = [true, true, true], base = [true, true, true] }
