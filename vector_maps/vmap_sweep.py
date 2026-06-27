@@ -47,14 +47,26 @@ def _run_row(row, fit_cfg_path, retries):
         data = tomllib.load(f)
     data.setdefault("io", {})["folder"] = folder
     data["io"]["fname"] = stem
-    scan_s = pd.to_numeric(row.get("scan_s"), errors="coerce")
-    if pd.isna(scan_s):
-        # the sweep self-calibrates from each frame's descriptive toml (single source of truth);
-        # without its scan_s (already harvested into the manifest) skip rather than silently
-        # reuse a fixed calibration -- and no second toml read
-        print(f"  SKIP {stem}: no descriptive toml to calibrate from")
-        return None, None, None, {}
-    data["calibration"] = {"source": "frame_size", "frame_size": float(scan_s)}
+    cal = data.get("calibration", {})
+    if cal.get("source") == "toml":
+        toml_path = cal.get("toml_path")
+        if not toml_path:
+            row_toml = row.get("toml_path")
+            if row_toml is not None and not pd.isna(row_toml) and str(row_toml).strip():
+                toml_path = str(row_toml)
+        if not toml_path:
+            print(f"  SKIP {stem}: no descriptive toml to calibrate from")
+            return None, None, None, {}
+        data["calibration"] = {"source": "toml", "toml_path": toml_path}
+    else:
+        scan_s = pd.to_numeric(row.get("scan_s"), errors="coerce")
+        if pd.isna(scan_s):
+            # the sweep self-calibrates from each frame's descriptive toml (single source of truth);
+            # without its scan_s (already harvested into the manifest) skip rather than silently
+            # reuse a fixed calibration -- and no second toml read
+            print(f"  SKIP {stem}: no descriptive toml to calibrate from")
+            return None, None, None, {}
+        data["calibration"] = {"source": "frame_size", "frame_size": float(scan_s)}
     cfg = AppConfig.model_validate(data)
     nominal = {m.label: tuple(m.coord) for m in cfg.motif}
     last = None

@@ -18,10 +18,14 @@ class Io(BaseModel):
 
 class Calibration(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    source: Literal["sidecar", "value", "frame_size"] = "sidecar"  # _frame.txt | inline | toml frame_size
+    source: Literal["sidecar", "value", "frame_size", "toml"] = "sidecar"
+    # sidecar: <fname>_frame.txt; value: inline nm/px.
+    # frame_size: inline scan_s (Angstrom), or toml_path for a single-frame config.
+    # toml: sweep/runtime reads scan_s from a descriptive toml; in sweep,
+    #       calibration.toml_path is an explicit override, otherwise manifest.toml_path is used.
     value: Optional[float] = None
-    frame_size: Optional[float] = None                             # source="frame_size": scan_s (Angstrom), /n_px
-    toml_path: Optional[str] = None                                # source="frame_size": read scan_s from this toml
+    frame_size: Optional[float] = None
+    toml_path: Optional[str] = None
 
     @model_validator(mode="after")
     def _frame_size_source(self):

@@ -56,9 +56,11 @@ def _resolve_calib(cfg, folder, override):
         if cfg.calibration.frame_size is not None:
             return calib_from_frame_size(folder, cfg.io.fname, cfg.calibration.frame_size)
         return read_toml_calib(folder, cfg.io.fname, cfg.calibration.toml_path)
+    if cfg.calibration.source == "toml":
+        return read_toml_calib(folder, cfg.io.fname, cfg.calibration.toml_path)
     if cfg.calibration.value is not None:
         return float(cfg.calibration.value)
-    raise ValueError("no calibration: set [calibration].value, a sidecar, or --calib")
+    raise ValueError("no calibration: set [calibration].value, a sidecar/toml, or --calib")
 
 
 # ---- seed sidecar ----------------------------------------------------------

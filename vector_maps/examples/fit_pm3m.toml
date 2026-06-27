@@ -33,7 +33,7 @@ seed = false
 passes = [
   { name = "detectA", detect = { ptonn = 0.6, imsize = [16.0, 16.0], sep = 10 } },
   { name = "fitA",    sub_area = [0.5, 4.5, 0.5, 4.5], vec_scale = 0.2, max_dist = 0.1 },
-  { name = "detectA_prefit", detect = { ptonn = 0.6, imsize = [16.0, 16.0], sep = 10 } }
+  { name = "detectA_prefit", detect = { ptonn = 0.6, imsize = [16.0, 16.0], sep = 10 } },
   # accrete: detect B on detectA's residual, concat onto the working set -> {fname}_sub_AB_xyI.csv
   { name = "detectB", detect = { ptonn = 0.4, imsize = [16.0, 16.0], sep = 8 , accrete = true, source = "{fname}_2DG_ptnn_0.6_diff2.tif", save_as = "{fname}_sub_AB" } },
   { name = "fitAB",   sub_area = [0.5, 4.5, 0.5, 4.5], vec_scale = 0.25, max_dist = 0.1, save = true, fit = { B_1 = [true, true] } },
