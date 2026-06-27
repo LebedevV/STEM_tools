@@ -92,6 +92,13 @@ def _save_seed(path, lat_params):
 
 # ---- pass execution --------------------------------------------------------
 
+def _apply_use(mask, motif):
+    for key, flag in mask.items():
+        if key not in motif:
+            raise KeyError(f"use mask references unknown motif '{key}'")
+        motif[key]["use"] = bool(flag)
+
+
 def _apply_fit(mask, lat_params, motif, extra_pars):
     for key, flags in mask.items():
         if key == "abg":
@@ -245,6 +252,8 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
                                         # detect concats onto it and sets its save_as stem
     for p in cfg.run.passes:
         if p.detect is not None:
+            if p.use:
+                _apply_use(p.use, motif)
             dataset = _run_detect(p.detect, folder, fname, dataset, p.name,
                                   lat_params, motif, extra_pars, cal)
             print(f"[{p.name}] detect -> dataset = {dataset}")
@@ -255,6 +264,8 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
             for ai, area in enumerate(areas):
                 for b in bodies:
                     eff = p if b is None else _merge_body(p, b)
+                    if eff.use:
+                        _apply_use(eff.use, motif)
                     gui_opened = gui_opened or (gui_master and eff.gui)
                     meta = _run_pass(eff, folder, fname, cal, lat_params, motif,
                                      extra_pars, gui_master, refine_master,
@@ -263,6 +274,8 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
                     print(f"[{p.name} {ai + 1}/{len(areas)}] residual_in_pm = "
                           f"{meta.get('residual_in_pm') if meta else None}")
         else:
+            if p.use:
+                _apply_use(p.use, motif)
             gui_opened = gui_opened or (gui_master and p.gui)
             meta = _run_pass(p, folder, fname, cal, lat_params, motif,
                              extra_pars, gui_master, refine_master, dataset_fname=dataset,

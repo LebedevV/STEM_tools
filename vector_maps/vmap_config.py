@@ -119,6 +119,7 @@ class Pass(BaseModel):
     save: bool = False
     gui: bool = False
     refine: bool = True
+    use: dict[str, bool] = Field(default_factory=dict)
     fit: dict[str, list[bool]] = {}
     add: list[MotifAtom] = []
     expand: Optional[Expand] = None
