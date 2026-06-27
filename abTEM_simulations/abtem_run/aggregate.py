@@ -36,43 +36,34 @@ log = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 
 
-def _config_hash(cfg) -> str:
-	"""Stable 8-char hex digest of the full config. A re-aggregate with the
-	same TOML rediscovers its version dir; an edited TOML starts a fresh one.
-	The UTC dir-name prefix is display/sort only — never hashed."""
-	blob = json.dumps(cfg.model_dump(mode="json"), sort_keys=True)
-	return hashlib.sha256(blob.encode()).hexdigest()[:8]
+def version_dir_for(job_dir, cfg=None, *, force_new: bool = False) -> Path:
+	"""Rediscover or create ``aggregate/<UTC>_<hash>/`` for one job.
 
+	The hash is the full job config; the seed set is deliberately not part of it,
+	so re-aggregation and later extensions reuse the same version directory.
+	"""
+	job_dir = Path(job_dir).resolve()
+	if cfg is None:
+		_, cfg = load_job_config(job_dir)
 
-def _resolve_version_dir(agg_root: Path, cfg, *, force_new: bool) -> Path:
-	"""Rediscover or create the aggregate version dir ``<UTC>_<hash>/``.
-	Without force_new, reuses the newest existing dir whose ``<hash>`` matches
-	the current config (so re-aggregate / post-extend accumulate into the same
-	dir — the seed set is deliberately NOT in the hash). force_new always makes
-	a fresh dir."""
-	h = _config_hash(cfg)
+	config_blob = json.dumps(cfg.model_dump(mode="json"), sort_keys=True)
+	config_hash = hashlib.sha256(config_blob.encode()).hexdigest()[:8]
+	agg_root = job_dir / "aggregate"
 	agg_root.mkdir(parents=True, exist_ok=True)
+
 	if not force_new:
-		matches = sorted(agg_root.glob(f"*_{h}"), key=lambda p: p.stat().st_mtime)
+		matches = sorted(agg_root.glob(f"*_{config_hash}"), key=lambda p: p.stat().st_mtime)
 		if matches:
 			return matches[-1]
+
 	utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-	vdir = agg_root / f"{utc}_{h}"
+	vdir = agg_root / f"{utc}_{config_hash}"
 	i = 2
-	while vdir.exists():  # same-second force_new collision; keep <hash> as the suffix
-		vdir = agg_root / f"{utc}-{i}_{h}"
+	while vdir.exists():
+		vdir = agg_root / f"{utc}-{i}_{config_hash}"
 		i += 1
 	vdir.mkdir(parents=True, exist_ok=True)
 	return vdir
-
-
-def version_dir_for(job_dir, *, force_new: bool = False) -> Path:
-	"""Resolve the aggregate version dir for a job from its TOML — rediscover
-	the newest dir matching the config hash, or create one. Public so the
-	to_ensemble bridge co-locates its output with the matching aggregate."""
-	job_dir = Path(job_dir).resolve()
-	_, cfg = load_job_config(job_dir)
-	return _resolve_version_dir(job_dir / "aggregate", cfg, force_new=force_new)
 
 
 def _write_seed_provenance(target_dir: Path, seeds: list[int], counts: dict[str, int]) -> None:
@@ -276,7 +267,6 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 	job_dir = Path(job_dir).resolve()
 	out_dir = job_dir / "outputs"
 	archive_dir = job_dir / "outputs_archive"
-	agg_dir = job_dir / "aggregate"
 
 	# Re-aggregating archived-only jobs is valid.
 	if not out_dir.exists() and not archive_dir.exists():
@@ -296,7 +286,7 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 	_, cfg = load_job_config(job_dir)
 	ctx = resolve_context(cfg)
 
-	vdir = _resolve_version_dir(agg_dir, cfg, force_new=force_new)
+	vdir = version_dir_for(job_dir, cfg, force_new=force_new)
 	scans_dir = vdir / "scans"
 	patterns_dir = vdir / "patterns"
 	proj_dir = vdir / "projections"
@@ -339,7 +329,6 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 	job_dir = Path(job_dir).resolve()
 	out_dir = job_dir / "outputs"
 	archive_dir = job_dir / "outputs_archive"
-	agg_dir = job_dir / "aggregate"
 
 	if not out_dir.exists() and not archive_dir.exists():
 		raise FileNotFoundError(f"No outputs/ or outputs_archive/ directory in {job_dir}")
@@ -355,7 +344,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 
 	_, cfg = load_job_config(job_dir)
 	ctx = resolve_context(cfg)
-	vdir = _resolve_version_dir(agg_dir, cfg, force_new=force_new)
+	vdir = version_dir_for(job_dir, cfg, force_new=force_new)
 	proj_dir = vdir / "projections"
 
 	# Total seeds from the first channel that has any zarrs (scan detectors
