@@ -9,6 +9,8 @@ import argparse
 import os
 import tomllib
 
+import pandas as pd
+
 from routines.routines import *
 from routines.refinement_routines import *
 from routines.plot_routines import *
@@ -191,6 +193,21 @@ def _rotate_backup(path, keep=3):
     os.replace(path, f"{path}.bckp1")
 
 
+def _read_xyi_csv(path, *, label):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{label} did not write {path}")
+    try:
+        df = pd.read_csv(path)
+    except pd.errors.EmptyDataError as exc:
+        raise RuntimeError(f"{label} wrote an empty CSV: {path}") from exc
+    if len(df) == 0:
+        raise RuntimeError(f"{label} found zero atom positions: {path}")
+    return df
+
+
+def _xyi_csv_path(folder, stem):
+    return os.path.join(folder, f"{stem}_xyI.csv")
+
 def _run_detect(d, folder, fname, current, name, lat_params, motif, extra_pars, calib):
     # One detection step, composed at the schedule level (see DESIGN.md). The two
     # modes are never crossed:
@@ -214,23 +231,31 @@ def _run_detect(d, folder, fname, current, name, lat_params, motif, extra_pars, 
         )
 
     if not d.accrete:
-        _rotate_backup(os.path.join(folder, f"{fname}_xyI.csv"))
+        _rotate_backup(_xyi_csv_path(folder, fname))
         if d.seed == "fit":
             # only the peak-finding is skipped -- detect_columns still 2D-gaussian-refines the seeds
             redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars,
                                   gen_ij((-170, 170)), ptonn=d.ptonn, out_suffix="")
         else:
             detect(out_suffix="")
+        out_path = _xyi_csv_path(folder, fname)
+        out_df = _read_xyi_csv(out_path, label=f"detect pass '{name}'")
+        print(f"[{name}] detect count: {len(out_df)} -> {out_path}")
         return None
 
     detect(out_suffix=f"_{name}")
     base = current if current is not None else fname
     target = d.save_as.format(fname=fname, name=name)
-    pd.concat(
-        [pd.read_csv(os.path.join(folder, f"{base}_xyI.csv")),
-         pd.read_csv(os.path.join(folder, f"{fname}_{name}_xyI.csv"))],
-        ignore_index=True, sort=False,
-    ).to_csv(os.path.join(folder, f"{target}_xyI.csv"), index=False, float_format="%.8g")
+    base_path = _xyi_csv_path(folder, base)
+    new_path = _xyi_csv_path(folder, f"{fname}_{name}")
+    target_path = _xyi_csv_path(folder, target)
+
+    base_df = _read_xyi_csv(base_path, label=f"detect pass '{name}' base dataset")
+    new_df = _read_xyi_csv(new_path, label=f"detect pass '{name}' accreted detection")
+    merged = pd.concat([base_df, new_df], ignore_index=True, sort=False)
+    merged.to_csv(target_path, index=False, float_format="%.8g")
+    print(f"[{name}] detect count: base={len(base_df)}, new={len(new_df)}, "
+          f"merged={len(merged)} -> {target_path}")
     return target
 
 

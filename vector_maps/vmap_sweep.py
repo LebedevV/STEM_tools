@@ -69,11 +69,12 @@ def _run_row(row, fit_cfg_path, retries):
     nominal = {m.label: tuple(m.coord) for m in cfg.motif}
     last = None
     for _ in range(max(1, retries)):
-        try:
+        #try:
+        if 1:
             lat, motif, _extra, meta = vmap_run.run(cfg, gui=False)
             return lat, motif, meta, nominal
-        except Exception as exc:
-            last = exc
+        #except Exception as exc:
+        #    last = exc
     print(f"  SKIP {stem}: {type(last).__name__}: {last}")
     return None, None, None, nominal
 
