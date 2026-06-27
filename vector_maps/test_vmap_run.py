@@ -144,7 +144,8 @@ def test_run_detect_reset_replaces_and_backs_up(tmp_path, monkeypatch):
 	fake_mod.detect_columns = fake_detect
 	monkeypatch.setitem(_sys.modules, "detect_columns", fake_mod)
 
-	out = vr._run_detect(Detect(ptonn=0.6, imsize=[10.0, 10.0]), folder, "frame", None, "detectA")
+	out = vr._run_detect(Detect(ptonn=0.6, imsize=[10.0, 10.0]), folder, "frame", None, "detectA",
+			     {}, {}, {}, 0.0)
 
 	assert out is None                                 # fit reads the canonical csv
 	assert open(os.path.join(folder, "frame_xyI.csv.bckp1")).read() == "OLD"
@@ -173,7 +174,7 @@ def test_run_detect_accrete_concats_onto_working_set_no_dedup(tmp_path, monkeypa
 
 	d = Detect(ptonn=0.4, imsize=[10.0, 10.0], accrete=True,
 		   save_as="{fname}_sub_AB", source="{fname}_2DG_ptnn_0.6_diff2.tif")
-	stem = vr._run_detect(d, folder, "frame", None, "detectB")
+	stem = vr._run_detect(d, folder, "frame", None, "detectB", {}, {}, {}, 0.0)
 
 	assert stem == "frame_sub_AB"
 	out = pd.read_csv(os.path.join(folder, "frame_sub_AB_xyI.csv"))
@@ -188,6 +189,38 @@ def test_detect_save_as_iff_accrete():
 		Detect(ptonn=0.4, imsize=[10.0, 10.0], accrete=True)
 	with pytest.raises(ValueError, match="accrete only"):
 		Detect(ptonn=0.4, imsize=[10.0, 10.0], save_as="{fname}_sub_AB")
+
+
+def test_detect_seed_fit_rejects_accrete():
+	# seed="fit" re-detects from the lattice (a reset); it can't also accrete
+	with pytest.raises(ValueError, match="not for accrete"):
+		Detect(ptonn=0.6, imsize=[10.0, 10.0], seed="fit", accrete=True, save_as="{fname}_x")
+
+
+def test_run_detect_seed_fit_reseeds_from_lattice(tmp_path, monkeypatch):
+	# seed="fit" reset: rotate-backup the canonical, re-detect seeded by the LIVE lattice via
+	# redetect_from_lattice (peak-finding skipped, 2D-gaussian refine still runs), return None
+	folder = os.path.join(str(tmp_path), "")
+	with open(os.path.join(folder, "frame_xyI.csv"), "w") as f:
+		f.write("OLD")
+	seen = {}
+
+	def fake_redetect(fld, fn, calib, lat, mot, ep, ij, ptonn=0.6, out_suffix="_redetect"):
+		seen.update(fname=fn, calib=calib, ptonn=ptonn, out_suffix=out_suffix, lat=lat)
+		pd.DataFrame({"x_obs0": [1.0, 2.0], "y_obs0": [0.0, 0.0]}).to_csv(
+			os.path.join(fld, fn + out_suffix + "_xyI.csv"), index=False)
+		return os.path.join(fld, fn + out_suffix + "_xyI.csv")
+	monkeypatch.setattr(vr, "redetect_from_lattice", fake_redetect)
+
+	d = Detect(ptonn=0.55, imsize=[10.0, 10.0], seed="fit")
+	out = vr._run_detect(d, folder, "frame", None, "reseedA",
+			     {"abg": [0.4, 0.4, 90.0]}, {"A": {}}, {}, 0.018)
+
+	assert out is None                                             # reset -> next fit reads canonical
+	assert seen["out_suffix"] == "" and seen["ptonn"] == 0.55 and seen["calib"] == 0.018
+	assert seen["lat"] == {"abg": [0.4, 0.4, 90.0]}               # seeded from the live (fitted) lattice
+	assert open(os.path.join(folder, "frame_xyI.csv.bckp1")).read() == "OLD"  # canonical backed up
+	assert len(pd.read_csv(os.path.join(folder, "frame_xyI.csv"))) == 2       # new canonical written
 
 
 def test_main_rejects_batch_config():
