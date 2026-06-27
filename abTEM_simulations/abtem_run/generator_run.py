@@ -177,8 +177,7 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
     # Per-frame stem suffix so non-tilt sweep axes don't collide (see helper).
     sweep_tags = _frame_sweep_tags(frames)
 
-    # Output root from TOML
-    out_root = Path(cfg0.paths.folder_sim) / cfg0.paths.extr
+    out_root = cfg0.paths.output_root
     out_root.mkdir(parents=True, exist_ok=True)
 
     run_dir = out_root / f"gen_{_now_utc_compact()}"

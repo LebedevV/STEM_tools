@@ -109,8 +109,8 @@ def expand_cfg(cfg: AppConfig):
 		yield AppConfig.model_validate(d)
 
 def resolve_context(cfg, global_tilt: tuple[float, float] | None = None):
-	folder_sim = cfg.paths.folder_sim + cfg.paths.extr
-	folder = cfg.paths.folder
+	folder_sim = str(cfg.paths.output_root)
+	folder = str(cfg.paths.folder_path)
 
 	do_full_run = cfg.simulations.do_full_run
 	HT_value = cfg.microscope.HT_value

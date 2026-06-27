@@ -560,8 +560,10 @@ def build_lamella_from_config(cfg, hkl):
 	'''
 	ls = cfg.lamella_settings
 	lamella_sizes = (ls.borders * 2 + ls.scan_s, ls.borders * 2 + ls.scan_s, float(ls.thickness))
+	if not isinstance(cfg.job.phase, str):
+		raise ValueError("build_lamella_from_config requires a scalar job.phase")
 	lamella = make_lamella(
-		cfg.paths.folder + cfg.job.phase,
+		str(cfg.paths.phase_path(cfg.job.phase)),
 		hkl,
 		ls.sblock_size,
 		lamella_sizes,

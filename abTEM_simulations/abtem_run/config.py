@@ -33,7 +33,38 @@ class Paths(BaseModel):
 	extr: str = Field()
 	folder: str = Field()
 	sample_name: str = Field()
-	
+
+	@field_validator("folder", "folder_sim", mode="before")
+	@classmethod
+	def validate_base_path(cls, v: Any):
+		if not isinstance(v, str) or not v.strip():
+			raise ValueError("path fields must be non-empty strings")
+		return v
+
+	@field_validator("extr", mode="before")
+	@classmethod
+	def validate_extr(cls, v: Any):
+		if not isinstance(v, str):
+			raise ValueError("extr must be a string")
+		if Path(v).is_absolute():
+			raise ValueError("extr must be a relative output subdirectory")
+		return v
+
+	@property
+	def folder_path(self) -> Path:
+		return Path(self.folder)
+
+	@property
+	def folder_sim_path(self) -> Path:
+		return Path(self.folder_sim)
+
+	@property
+	def output_root(self) -> Path:
+		return self.folder_sim_path / self.extr
+
+	def phase_path(self, phase: str) -> Path:
+		return self.folder_path / phase
+
 class Job(BaseModel):
 	"""Job-defining parameters (one per config TOML)."""
 	phase: str | list[str] = Field()
@@ -415,16 +446,15 @@ class AppConfig(BaseModel):
 	simulations: Simulations
 	job: Job
 
-# Resolve a [paths] field: absolute paths pass through, relative ones resolve
-# against `base` (the config file's dir). Trailing '/' keeps folder+phase /
-# folder_sim+extr concatenation working.
-_resolve_path_field = lambda value, base: str((Path(value) if Path(value).is_absolute() else base / value).resolve()) + "/"  # noqa: E731
+def _resolve_path_field(value: str, base: Path) -> str:
+	path = Path(value).expanduser()
+	if not path.is_absolute():
+		path = base / path
+	return str(path.resolve())
+
 
 def load_config(path: str | Path = 'config.toml') -> AppConfig:
-	# The config-file path itself is verbatim (absolute or relative to CWD).
-	# paths.folder / paths.folder_sim *inside* the config are then resolved
-	# relative to the config file's directory if not absolute, so a config
-	# can travel with its CIFs and output dir regardless of CWD.
+	# Relative config paths are resolved beside the TOML file.
 	full_path = Path(path).resolve()
 	config_dir = full_path.parent
 	with full_path.open("rb") as f:
