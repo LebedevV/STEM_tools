@@ -4,21 +4,23 @@ __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
 """
-Convenience wrapper that drives the worker pipeline in-process:
+Local source-tree driver for the worker pipeline:
 
     generate  ->  for each .todo:  run_one_seed  ->  aggregate
 
-Same effective behavior as running ``abtem-run-generate``, then a bash
-loop over ``abtem-run-worker``, then ``abtem-run-aggregate`` — but in
-one Python process, no orchestration. For sweeps that need parallel
-workers (slurm, GNU parallel, multiple GPUs), use the lower-level
-console scripts directly.
+This project is normally run directly from a checked-out source tree, not
+through installed console scripts. From the repository root, use::
 
-CLI:
-    abtem-run                              # uses ./config.toml
-    abtem-run --config my_config.toml
-    abtem-run --generate-only              # plan + planning artifacts, no GPU
-    abtem-run --resume gen_<UTC>           # finish a partially-run sweep
+    python run.py                              # uses ./config.toml
+    python run.py --config my_config.toml
+    python run.py --generate-only              # plan + planning artifacts, no GPU
+    python run.py --resume gen_<UTC>           # finish a partially-run sweep
+
+For parallel execution (slurm, GNU parallel, multiple GPUs), submit the
+lower-level module entry points directly, for example::
+
+    python -m abtem_run.worker <job_dir> <todo_path>
+    python -m abtem_run.aggregate <job_dir>
 """
 
 import argparse
@@ -90,11 +92,13 @@ def run_pipeline(
 		if show_estimate and not os.environ.get("ABTEM_RUN_NO_ESTIMATE"):
 			from ._estimate import estimate_run_cost, format_run_cost
 			log.info(format_run_cost(estimate_run_cost(load_config(config_path))))
-		log.info(f"abtem-run: generating queue from {config_path}")
+		log.info(f"abtem_run: generating queue from {config_path}")
 		run_dir = generate_run(config_path)
-		log.info(f"abtem-run: queue at {run_dir}")
+		log.info(f"abtem_run: queue at {run_dir}")
 		if generate_only:
-			log.info("abtem-run: stopping after generation (--generate-only).")
+			log.info("abtem_run: stopping after generation (--generate-only).")
+			log.info("Next step: inspect the generated combined.png files, then run:")
+			log.info(f"  python run.py --resume {run_dir}")
 			return run_dir
 	else:
 		run_dir = Path(resume_dir).resolve()
@@ -106,44 +110,44 @@ def run_pipeline(
 				f"No job directories (subdir/seeds/) under {run_dir}. "
 				"Is this really a 'gen_<UTC>/' directory?"
 			)
-		log.info(f"abtem-run: resuming {run_dir}")
+		log.info(f"abtem_run: resuming {run_dir}")
 
 	job_dirs = sorted(p for p in run_dir.iterdir() if p.is_dir())
-	log.info(f"abtem-run: {len(job_dirs)} job(s) to process")
+	log.info(f"abtem_run: {len(job_dirs)} job(s) to process")
 
 	for job_dir in job_dirs:
 		todos = sorted((job_dir / "seeds").glob("*.todo"))
 		if todos:
-			log.info(f"abtem-run: [{job_dir.name}] {len(todos)} seed(s) to run")
+			log.info(f"abtem_run: [{job_dir.name}] {len(todos)} seed(s) to run")
 			for todo in todos:
-				log.info(f"abtem-run: [{job_dir.name}]   {todo.name}")
+				log.info(f"abtem_run: [{job_dir.name}]   {todo.name}")
 				run_one_seed(job_dir, todo)
 		else:
-			log.info(f"abtem-run: [{job_dir.name}] all seeds done")
+			log.info(f"abtem_run: [{job_dir.name}] all seeds done")
 
 		# If outputs/ is gone, a previous aggregator already archived it —
 		# nothing fresh to re-aggregate (use --aggregate to force a rebuild).
 		if not (job_dir / "outputs").exists():
-			log.info(f"abtem-run: [{job_dir.name}] outputs/ missing — aggregate already run; skipping")
+			log.info(f"abtem_run: [{job_dir.name}] outputs/ missing — aggregate already run; skipping")
 			continue
-		log.info(f"abtem-run: [{job_dir.name}] aggregating")
+		log.info(f"abtem_run: [{job_dir.name}] aggregating")
 		aggregate_job(job_dir, force_new=force_new)
 
-	log.info("abtem-run: finished")
+	log.info("abtem_run: finished")
 	return run_dir
 
 
 def main():
-	"""``abtem-run`` console-script entry."""
+	"""Source-tree entry point used by ``python run.py``."""
 	configure_default_logging()
 	parser = argparse.ArgumentParser(
-		prog="abtem-run",
+		prog="python run.py",
 		description=(
-			"abtem-run: in-process pipeline driver. "
+			"Local serial driver for abtem_run. "
 			"Generates the per-seed work queue from the TOML config, then "
 			"runs all workers serially and aggregates each job. "
-			"For parallel execution, call abtem-run-worker / "
-			"abtem-run-aggregate directly."
+			"For parallel execution, call `python -m abtem_run.worker` / "
+			"`python -m abtem_run.aggregate` directly."
 		),
 	)
 	parser.add_argument(
@@ -171,8 +175,9 @@ def main():
 		default=None,
 		metavar="JOB_DIR",
 		help=(
-			"shorthand for `abtem-run-aggregate <JOB_DIR>`: aggregate one job "
-			"dir (no generator, no workers). Useful when workers ran out-of-band."
+			"aggregate one job dir (same effect as "
+			"`python -m abtem_run.aggregate <JOB_DIR>`; no generator, no workers). "
+			"Useful when workers ran out-of-band."
 		),
 	)
 	parser.add_argument(
@@ -225,7 +230,7 @@ def main():
 		aggregate_job(args.aggregate, force_new=args.force_new)
 	elif args.aggregate_series is not None:
 		n_emitted = aggregate_series(args.aggregate_series, n_phonons=args.n_phonons, force_new=args.force_new)
-		log.info(f"abtem-run: emitted {n_emitted} series/n_<k>/ frame(s)")
+		log.info(f"abtem_run: emitted {n_emitted} series/n_<k>/ frame(s)")
 	elif args.resume is not None:
 		if args.generate_only:
 			parser.error("--generate-only cannot be combined with --resume")
