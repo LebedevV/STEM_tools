@@ -864,16 +864,18 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 		plot_quiver(file_s + '_vmap_rotated',th_relevant2,vdiff_xy_corr,ang_corr,
 				vec_scale,hd_w=2,units_v='$1 \\AA$',ell=False,calib=calib,df=diff_df)
 		
-		#_corr meant to be aligned with OX already, compensating phi
-		phi = phi*np.pi/180
-		base_x = np.array([np.cos(phi),np.sin(phi)])
-		base_y = np.array([np.cos(phi+np.pi/2),np.sin(phi+np.pi/2)])
+		# Project raw displacement vectors onto the fitted a-axis and its normal.
+		# The basis mirrors get_coords_from_ij/lattice_px_from_fit: phi is stored
+		# in degrees and positive phi rotates visually CCW in the image y-down frame.
+		phi_rad = np.deg2rad(phi)
+		a_hat = np.array([np.cos(phi_rad), -np.sin(phi_rad)])
+		a90_hat = np.array([np.sin(phi_rad), np.cos(phi_rad)])
 		
-		proj_a = np.dot(vdiff_xy,base_x)
-		proj_a = base_x*proj_a[:,None]
+		proj_a = np.dot(vdiff_xy,a_hat)
+		proj_a = a_hat*proj_a[:,None]
 		
-		proj_a90 = np.dot(vdiff_xy,base_y)
-		proj_a90 = base_y*proj_a90[:,None]
+		proj_a90 = np.dot(vdiff_xy,a90_hat)
+		proj_a90 = a90_hat*proj_a90[:,None]
 				
 		plot_quiver(file_s + '_vmap_proj_a',th_relevant2,proj_a,ang,
 				vec_scale,hd_w=2,units_v='$1 \\AA$',ell=False,calib=calib)

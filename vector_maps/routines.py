@@ -168,8 +168,17 @@ def export_data(folder,sf,fname,lat_params_vec,raw_lat_params,raw_motif,raw_extr
 	extra = pd.DataFrame.from_dict(extra_pars_fin,orient='index')
 	extra.to_csv(export_name + '_extra.csv',sep='\t')
 
-def vector_map_calc(phi,df):
-	#phi = param[2]/180*np.pi
+def vector_map_calc(phi_deg,df):
+	"""Compute observed-minus-fitted vector-map quantities.
+
+	``phi_deg`` is the fitted lattice rotation ``base[2]`` in degrees, matching
+	``get_coords_from_ij`` and the config/schema convention.  ``vproj`` stores
+	scalar components of each displacement projected onto the fitted a-axis and
+	the corresponding normal-to-a direction in image coordinates.
+	"""
+	phi_rad = np.deg2rad(phi_deg)
+	a_hat = np.array([np.cos(phi_rad), -np.sin(phi_rad)])
+	a90_hat = np.array([np.sin(phi_rad), np.cos(phi_rad)])
 	#fin_lat = get_coords_from_ij(f_ij,param,no_modulation,only_ortho,max_lim)[0]
 	
 	obs = np.array(df[['x_obs','y_obs']].values)
@@ -180,7 +189,7 @@ def vector_map_calc(phi,df):
 	 
 	vdiff_ref = np.nanmean(vdiff_xy,axis=0)
 	
-	vproj = np.array([(x*np.cos(phi) + y*np.sin(phi), y*np.cos(phi) - x*np.sin(phi)) for x,y in vdiff_xy])
+	vproj = np.column_stack((vdiff_xy @ a_hat, vdiff_xy @ a90_hat))
 	df['vproj'] = vproj.tolist()
 	
 	#print(np.std(vproj,axis=0))
