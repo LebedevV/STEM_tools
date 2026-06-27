@@ -775,7 +775,13 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 	types_raw = [ motif[i]['atom'] for i in labels_raw]
 
 
-	diff_df = diff_df.dropna()
+	# Keep rows with valid geometry/vector data, but do not drop rows merely
+	# because optional detector metadata is absent.  Accreted A+B tables often
+	# merge CSVs with different optional columns (I_gauss, ellipticity, fit
+	# uncertainties, ...), so a blanket dropna() can erase every atom.
+	geom_cols = ['x_obs', 'y_obs', 'x_theor_new', 'y_theor_new', 'vdist', 'ang', 'ang_corr']
+	diff_df = diff_df.dropna(subset=[c for c in geom_cols if c in diff_df.columns])
+	metadata['atoms_paired'] = len(diff_df)
 	if relative_to is not None:
 		if relative_to not in labels_raw:
 			raise IOError('Suggested reference atom position not found')
@@ -786,7 +792,10 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 			#relative_to_i = labels_raw.index(relative_to)
 			diff_df = calculate_rel_diff(diff_df,labels_raw,relative_to,kernel=kernel)
 	
-	diff_df = diff_df.dropna()			
+	rel_cols = ['x_obs', 'y_obs', 'x_theor_new', 'y_theor_new', 'vdist_rel', 'ang_rel', 'ang_corr_rel']
+	if relative_to is not None:
+		diff_df = diff_df.dropna(subset=[c for c in rel_cols if c in diff_df.columns])
+		metadata['atoms_paired'] = len(diff_df)
 	
 	if relative_to is None:
 		vdiff_xy = np.array(diff_df['vdiff_xy'].tolist())
@@ -849,6 +858,10 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 				)
 		
 		
+		if len(diff_df) == 0:
+			print(f'No valid paired atoms after filtering for {file_s}; skipping stats/quiver plots')
+			return metadata, param_vec
+
 		plot_stats_rep(vdist,file_s+'_diff',ang=False,ang_weights=None)
 		plot_stats_rep(ang,file_s+'_angles',ang=True,ang_weights=None)
 		

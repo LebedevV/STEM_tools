@@ -292,10 +292,15 @@ def plot_stats_rep(vdist,fname_save,ang=False,ang_weights=None):
 	if ang:
 		N_st = 46
 		a = np.array(vdist)/np.pi*180
-		print(len(a),'angles',a[0])
 	else:
 		N_st = 35
 		a = np.array(vdist)*1000
+	a = a[np.isfinite(a)]
+	if len(a) == 0:
+		print(f'No finite values for {fname_save}; skipping stats plot')
+		return None
+	if ang:
+		print(len(a),'angles',a[0])
 	e_min,e_max = min(a),max(a)
 	edges = np.linspace(e_min, e_max, N_st, endpoint=True)
 	q=st.lognorm.fit(a,scale=9,loc=3)
