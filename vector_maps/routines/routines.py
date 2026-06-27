@@ -14,7 +14,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from dicts_handling import unpack_to_dicts
+from .dicts_handling import unpack_to_dicts
 
 def rotate_vec(v,an):
 	'''

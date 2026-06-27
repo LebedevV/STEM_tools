@@ -9,8 +9,8 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from unit_cell_average import average_unit_cell, lattice_px_from_fit
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from routines.unit_cell_average import average_unit_cell, lattice_px_from_fit
 
 A, B, ORIG = (22.0, 0.0), (3.0, 19.0), (7.0, 5.0)   # sheared test lattice (px)
 
@@ -100,7 +100,7 @@ def test_uc_figure_smoke():
 		return
 	import os
 	import tempfile
-	from unit_cell_average import _uc_figure
+	from routines.unit_cell_average import _uc_figure
 	mean, std, _ = average_unit_cell(_synth(A, B, ORIG), A, B, ORIG, method="raw")
 	lat = {"abg": [0.40, 0.50, 100.0], "base": [0.0, 0.0, 12.0]}
 	motif = {
@@ -118,7 +118,7 @@ def test_to_tiffs_resolves_tiff_extension():
 	import cv2
 	import os
 	import tempfile
-	from unit_cell_average import unit_cell_average_to_tiffs
+	from routines.unit_cell_average import unit_cell_average_to_tiffs
 	d = tempfile.mkdtemp()
 	cv2.imwrite(os.path.join(d, "frame.tiff"), _synth(A, B, ORIG).astype(np.float32))
 	lat = {"abg": [2.2, 2.2, 90.0], "base": [0.7, 0.5, 0.0]}

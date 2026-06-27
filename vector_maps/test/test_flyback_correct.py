@@ -9,8 +9,8 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from routines import flyback_warp, slow_axis_warp
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from routines.routines import flyback_warp, slow_axis_warp
 
 
 def test_warp_identity_when_zero_amplitude():
@@ -32,7 +32,7 @@ def test_warp_matches_formula():
 
 def test_extra_pars_unpack_feeds_warp():
 	# get_coords reads exp_a/exp_b as extr['exp_a'][0]; confirm that interface round-trips
-	from dicts_handling import dicts_to_vector, unpack_to_dicts
+	from routines.dicts_handling import dicts_to_vector, unpack_to_dicts
 	lat = {"abg": [0.3, 0.3, 90.0], "fit_abg": [False, False, False],
 	       "base": [0.0, 0.0, 0.0], "fit_base": [False, False, False]}
 	motif = {"A_1": {"atom": "X", "coord": (0.0, 0.0), "use": True, "fit": [False, False]}}

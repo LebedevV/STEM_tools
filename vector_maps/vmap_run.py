@@ -9,10 +9,10 @@ import argparse
 import os
 import tomllib
 
-from routines import *
-from refinement_routines import *
-from plot_routines import *
-from dicts_handling import unpack_to_dicts
+from routines.routines import *
+from routines.refinement_routines import *
+from routines.plot_routines import *
+from routines.dicts_handling import unpack_to_dicts
 
 from vmap_config import AppConfig
 
@@ -202,7 +202,7 @@ def _run_detect(d, folder, fname, current, name, lat_params, motif, extra_pars, 
     #     canonical) -- with NO dedup (fitted positions must not be merged), into
     #     <save_as>_xyI.csv. The working set is left untouched, so a reset measurement
     #     is never folded back into an accreted set. Mirrors fit_lattice_PZT's A+B concat.
-    from detect_columns import detect_columns
+    from routines.detect_columns import detect_columns
     src = d.source.format(fname=fname, name=name) if d.source else None
 
     def detect(out_suffix):
@@ -291,7 +291,7 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
         # fold the frame onto the refined cell -> <fname>_uc_{mean,std,count}.tif
         # + <fname>_uc_figure.png (cell schematic | mean | std), as the legacy
         # --unit-cell driver did (motif drives the schematic).
-        from unit_cell_average import unit_cell_average_to_tiffs
+        from routines.unit_cell_average import unit_cell_average_to_tiffs
         unit_cell_average_to_tiffs(os.path.join(folder, fname), lat_params, cal, motif)
 
     return lat_params, motif, extra_pars, meta

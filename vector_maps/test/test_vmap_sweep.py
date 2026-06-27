@@ -7,10 +7,10 @@ __license__ = "GPL-v3"
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import vmap_sweep
 
-TMPL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples", "fit_pm3m.toml")
+TMPL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples", "fit_pm3m.toml")
 
 
 def test_run_row_skips_without_descriptive_toml(capsys):

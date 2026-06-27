@@ -264,7 +264,7 @@ def unit_cell_average_to_tiffs(image_path, lat_params, calib, motif=None, out_st
 	Convenience for a driver's post-fit step: pass the refined lat_params + motif + calib.
 	"""
 	import cv2
-	from routines import resolve_frame_path
+	from .routines import resolve_frame_path
 	img = cv2.imread(resolve_frame_path(os.path.dirname(image_path), os.path.basename(image_path)), cv2.IMREAD_UNCHANGED)
 	if img is None:
 		raise FileNotFoundError(image_path)

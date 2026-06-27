@@ -5,9 +5,9 @@ __license__ = "GPL-v3"
 
 import os
 
-from routines import *
-from refinement_routines import *
-from plot_routines import *
+from routines.routines import *
+from routines.refinement_routines import *
+from routines.plot_routines import *
 
 # --- TaTe2: one Ta + two Te sublattices ---
 lat_params = {'abg': [0.32, 1.18, 145.5], 'fit_abg': [True, True, True],
@@ -43,7 +43,7 @@ def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False, shift
 				show_initial_spots=preview, vec_scale=0.25, sub_area=[0.5, 4.5, 0.5, 4.5], max_dist=0.15, shift_ab=shift_ab)
 	lp, mo, ep = unpack_to_dicts(vec, lat_params, motif, extra_pars)
 	if unit_cell:
-		from unit_cell_average import unit_cell_average_to_tiffs
+		from routines.unit_cell_average import unit_cell_average_to_tiffs
 		unit_cell_average_to_tiffs(folder + fname + ".tif", lp, calib, mo)
 	return meta
 

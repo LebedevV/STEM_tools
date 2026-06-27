@@ -13,9 +13,9 @@ from scipy.spatial.distance import cdist
 from scipy.spatial import cKDTree
 import cv2
 
-from routines import *
-from plot_routines import *
-from dicts_handling import *
+from .routines import *
+from .plot_routines import *
+from .dicts_handling import *
 
 from matplotlib.widgets import Slider, Button, CheckButtons
 
@@ -430,7 +430,7 @@ def redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars, i
 	returns the path of the new <stem><out_suffix>_xyI.csv. The GUI 'redetect (lattice
 	seed)' button wraps this. Image-dependent -- verified on a real frame, not unit-tested.
 	"""
-	from detect_columns import detect_columns
+	from .detect_columns import detect_columns
 	folder = os.path.join(str(folder), "")
 	stem = os.path.splitext(os.path.basename(fname))[0]
 	img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
@@ -455,7 +455,7 @@ def _redetect_scratch(image, folder, fname, calib, out_suffix="_scratch"):
 	wraps this; sigma blurs the view only (detect_columns detects on the unblurred frame).
 	Interactive -- manual-verify only.
 	"""
-	from detect_columns import detect_columns
+	from .detect_columns import detect_columns
 	folder = os.path.join(str(folder), "")
 	stem = os.path.splitext(os.path.basename(fname))[0]
 	H, W = image.shape[:2]
@@ -515,7 +515,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 	# FFT prefit: seed the lattice from the raw image before fitting -- rotation
 	# (align) or also a,b,gamma (prefit). Runs before shift_ab (which needs abg/phi).
 	if do_fft_align or do_fft_prefit:
-		from fft_prefit import fft_prefit
+		from .fft_prefit import fft_prefit
 		_fft_img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
 		lat_params.update(fft_prefit(_fft_img, lat_params, calib, refine_abg=do_fft_prefit))
 
@@ -628,7 +628,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 			_widen_set(s_shy, s_shy.val + dy)
 		btn_ab.on_clicked(_shift_ab_clicked)
 
-		from fft_prefit import fft_prefit
+		from .fft_prefit import fft_prefit
 
 		def _fft_clicked(refine_abg):
 			def handler(evt):

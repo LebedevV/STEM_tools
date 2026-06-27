@@ -10,8 +10,8 @@ import sys
 import pandas as pd
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import refinement_routines as rr
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from routines import refinement_routines as rr
 
 
 def test_empty_subarea_raises_clear_error():

@@ -9,8 +9,8 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fft_prefit import fft_prefit, _real_basis_px
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from routines.fft_prefit import fft_prefit, _real_basis_px
 
 A, B, GAMMA, PHI, CALIB = 0.30, 0.42, 90.0, 12.0, 0.01   # planted lattice
 

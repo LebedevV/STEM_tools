@@ -5,12 +5,12 @@ __license__ = "GPL-v3"
 
 import os
 
-from routines import *
-from refinement_routines import *
-from plot_routines import *
-from detect_columns import *
+from routines.routines import *
+from routines.refinement_routines import *
+from routines.plot_routines import *
+from routines.detect_columns import *
 
-from dicts_handling import unpack_to_dicts
+from routines.dicts_handling import unpack_to_dicts
 
 
 lat_params = { 'abg':[0.3, 0.42, 89.8],
@@ -63,7 +63,7 @@ def run_fit_pipeline(folder, fname, calib, preview=False, dataset_fname=None, un
 	lat_params_prefit,motif_prefit,extra_pars_prefit = unpack_to_dicts(lat_params_vec, lat_params_prefit, motif_prefit, extra_pars_prefit)
 
 	if unit_cell:
-		from unit_cell_average import unit_cell_average_to_tiffs
+		from routines.unit_cell_average import unit_cell_average_to_tiffs
 		unit_cell_average_to_tiffs(folder + fname + ".tif", lat_params_prefit, calib, motif_prefit)
 
 	return metadata

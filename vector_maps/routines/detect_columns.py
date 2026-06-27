@@ -16,7 +16,7 @@ import atomap.api as am
 import scipy
 import scipy.ndimage
 
-from routines import resolve_frame_path
+from .routines import resolve_frame_path
 
 
 

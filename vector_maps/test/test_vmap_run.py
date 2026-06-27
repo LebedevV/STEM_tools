@@ -10,11 +10,11 @@ import sys
 import pandas as pd
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import vmap_run as vr
 from vmap_config import Detect, Pass, load_config
 
-EXAMPLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples", "fit_si.toml")
+EXAMPLE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples", "fit_si.toml")
 
 
 def _state():
@@ -226,7 +226,7 @@ def test_run_detect_seed_fit_reseeds_from_lattice(tmp_path, monkeypatch):
 def test_main_rejects_batch_config():
 	# a batch sweep toml fed to the single-frame runner exits pointing at vmap_sweep,
 	# not a wall of pydantic extra_forbidden errors
-	batch = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples", "batch_pm3m.toml")
+	batch = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples", "batch_pm3m.toml")
 	with pytest.raises(SystemExit, match="vmap_sweep"):
 		vr.main(["--config", batch])
 

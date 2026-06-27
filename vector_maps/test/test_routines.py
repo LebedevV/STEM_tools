@@ -9,8 +9,8 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from routines import calib_from_frame_size, read_toml_calib, resolve_frame_path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from routines.routines import calib_from_frame_size, read_toml_calib, resolve_frame_path
 
 
 def test_resolves_tiff_variant(tmp_path):

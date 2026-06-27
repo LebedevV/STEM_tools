@@ -9,8 +9,8 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from routines import _panel_image
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from routines.routines import _panel_image
 
 
 def test_panel_image_uses_png_when_present(tmp_path):

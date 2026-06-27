@@ -5,9 +5,9 @@ __license__ = "GPL-v3"
 
 import os
 
-from routines import *
-from refinement_routines import *
-from plot_routines import *
+from routines.routines import *
+from routines.refinement_routines import *
+from routines.plot_routines import *
 
 #Meant to be 0.3867, 0.5469
 lat_params = { 'abg':[0.3805, 0.5369, 89.75],
@@ -96,7 +96,7 @@ def run_fit_pipeline(folder, fname, calib, preview=False, unit_cell=False, shift
 						show_initial_spots=preview,vec_scale=0.1,sub_area=[2,12,2,12],max_dist=0.1,shift_ab=shift_ab)
 	lp, mo, _ = unpack_to_dicts(lat_params_vec, lat_params, motif, extra_pars)
 	if unit_cell:
-		from unit_cell_average import unit_cell_average_to_tiffs
+		from routines.unit_cell_average import unit_cell_average_to_tiffs
 		unit_cell_average_to_tiffs(folder + fname + ".tif", lp, calib, mo)
 	return meta
 
