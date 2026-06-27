@@ -157,25 +157,12 @@ def _emit_channel(
 			blurred.to_tiff(str(agg_dir / f"{channel_name}_{tag}.tif"))
 	return mean, n_seeds
 
-
-def _suptitle(cfg, kind_label: str) -> str:
-	"""Common matplotlib suptitle for aggregate previews: ``sample, sg [hkl] — <kind>``."""
-	sg = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith('.cif') else cfg.job.phase
-	hkl = "".join(str(x) for x in cfg.job.hkl_list[0])
-	return f"{cfg.paths.sample_name}, {sg} [{hkl}] — {kind_label}"
-
-
-def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, kind_label: str) -> None:
-	"""Write a projected-potential preview from an already-computed projection
-	``proj`` (an ``Images``) and a ``probe`` for the side panel. Saves:
-	  - ``<stem>.png``          side-by-side projection + probe shape
-	  - ``<stem>.tif``          raw projection as TIFF
-	  - ``<stem>_scanned.tif``  cropped to the scan area
-	"""
+def _write_projection(proj, probe, cfg, agg_dir: Path, stem: str, title: str) -> None:
+	"""Write one projected-potential preview bundle."""
 	fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 4))
 	proj.show(cmap="magma", figsize=(4, 4), title="Projected Electrostatic Potential", ax=ax1)
 	probe.show(figsize=(4, 4), title="Real Space Probe", ax=ax2)
-	fig.suptitle(_suptitle(cfg, kind_label), fontsize=18)
+	fig.suptitle(title, fontsize=18)
 	fig.tight_layout()
 	fig.savefig(str(agg_dir / f"{stem}.png"), dpi=600)
 	plt.close(fig)
@@ -219,40 +206,15 @@ def _load_or_build_static_potential(job_dir: Path, cfg):
 	return pot
 
 
-def _write_projection_previews(out_dir: Path, archive_dir: Path, cfg, job_dir: Path, target_dir: Path) -> None:
-	"""Phonon-averaged projection at ``target_dir/potential_projection.*``,
-	plus a static-lattice one at ``..._static.*`` if ``emit_static_baseline``.
-	No-op if neither applies. The ground-state Potential is loaded (or built
-	and cached on miss) via ``_load_or_build_static_potential`` at ``job_dir``
-	(shared across aggregate version dirs) and reused for the probe grid
-	(abtem's Grid.match wants a Potential / a thing exposing ``gpts``, not an
-	Images) and the optional static projection."""
-	mean_proj, _ = _mean_zarr_channel(out_dir, archive_dir, "potproj")
-	if mean_proj is None and not cfg.simulations.emit_static_baseline:
-		return
-
-	static_potential = _load_or_build_static_potential(job_dir, cfg)
-	probe = add_probe(cfg, static_potential)
-
-	if mean_proj is not None:
-		_write_projection(mean_proj, probe, cfg, target_dir,
-			"potential_projection", "phonon-averaged projection")
-
-	if cfg.simulations.emit_static_baseline:
-		static_proj = static_potential.project().to_cpu().compute()
-		_write_projection(static_proj, probe, cfg, target_dir,
-			"potential_projection_static", "static lattice projection")
-
-
-def _write_pattern_preview(measurement, cfg, agg_dir: Path, stem: str,
-		kind_label: str, *, figsize: tuple[float, float]) -> None:
+def _write_pattern_preview(measurement, agg_dir: Path, stem: str, title: str,
+		*, figsize: tuple[float, float]) -> None:
 	"""Write a PNG preview for an averaged diffraction-style measurement."""
 	measurement.show(
 		explode=False, power=0.2, units="mrad",
 		figsize=figsize, cbar=True, common_color_scale=True,
 	)
 	fig = plt.gcf()
-	fig.suptitle(_suptitle(cfg, kind_label), y=1.005)
+	fig.suptitle(title, y=1.005)
 	fig.savefig(str(agg_dir / f"{stem}.png"), dpi=600)
 	plt.close(fig)
 
@@ -284,7 +246,10 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 			)
 
 	_, cfg = load_job_config(job_dir)
-	ctx = resolve_context(cfg)
+	_runtime = resolve_context(cfg)  # configure abTEM and keep any Dask client alive
+	phase = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith(".cif") else cfg.job.phase
+	hkl = "".join(str(x) for x in cfg.job.hkl_list[0])
+	preview_prefix = f"{cfg.paths.sample_name}, {phase} [{hkl}]"
 
 	vdir = version_dir_for(job_dir, cfg, force_new=force_new)
 	scans_dir = vdir / "scans"
@@ -305,19 +270,34 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 	if cfg.microscope.do_diffraction:
 		diff_mean, seed_counts["diff"] = _emit_channel(out_dir, archive_dir, patterns_dir, "diff", with_blurs=False)
 		if diff_mean is not None:
-			_write_pattern_preview(diff_mean, cfg, patterns_dir, "diff", "diffraction", figsize=(10, 6))
+			_write_pattern_preview(diff_mean, patterns_dir, "diff", f"{preview_prefix} — diffraction", figsize=(10, 6))
 	if cfg.microscope.do_cbed:
 		cbed_mean, seed_counts["cbed"] = _emit_channel(out_dir, archive_dir, patterns_dir, "cbed", with_blurs=False)
 		if cbed_mean is not None:
-			_write_pattern_preview(cbed_mean, cfg, patterns_dir, "cbed", "CBED", figsize=(8, 6))
+			_write_pattern_preview(cbed_mean, patterns_dir, "cbed", f"{preview_prefix} — CBED", figsize=(8, 6))
 
 	# 4. Seed provenance -> <vdir>/seed_counts.json (atoms-level seeds + counts).
 	seeds = contributing_seeds(out_dir, archive_dir, list(seed_counts))
 	_write_seed_provenance(vdir, seeds, seed_counts)
 
-	# 5. Projection preview(s) -> projections/: phonon-averaged + optional static.
 	proj_dir.mkdir(exist_ok=True)
-	_write_projection_previews(out_dir, archive_dir, cfg, job_dir, proj_dir)
+	mean_proj, _ = _mean_zarr_channel(out_dir, archive_dir, "potproj")
+	if mean_proj is not None or cfg.simulations.emit_static_baseline:
+		static_potential = _load_or_build_static_potential(job_dir, cfg)
+		probe = add_probe(cfg, static_potential)
+
+		if mean_proj is not None:
+			_write_projection(
+				mean_proj, probe, cfg, proj_dir, "potential_projection",
+				f"{preview_prefix} — phonon-averaged projection",
+			)
+
+		if cfg.simulations.emit_static_baseline:
+			static_proj = static_potential.project().to_cpu().compute()
+			_write_projection(
+				static_proj, probe, cfg, proj_dir, "potential_projection_static",
+				f"{preview_prefix} — static lattice projection",
+			)
 
 	# Keep diagnostic outputs visible in test mode.
 	if not cfg.simulations.test_enabled:
@@ -343,7 +323,10 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 			)
 
 	_, cfg = load_job_config(job_dir)
-	ctx = resolve_context(cfg)
+	_runtime = resolve_context(cfg)  # configure abTEM and keep any Dask client alive
+	phase = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith(".cif") else cfg.job.phase
+	hkl = "".join(str(x) for x in cfg.job.hkl_list[0])
+	preview_prefix = f"{cfg.paths.sample_name}, {phase} [{hkl}]"
 	vdir = version_dir_for(job_dir, cfg, force_new=force_new)
 	proj_dir = vdir / "projections"
 
@@ -370,9 +353,24 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 	if n_max < 1:
 		raise ValueError(f"n_phonons must be >= 1, resolved to {n_max}")
 
-	# Projection preview is written once for all available seeds.
 	proj_dir.mkdir(exist_ok=True)
-	_write_projection_previews(out_dir, archive_dir, cfg, job_dir, proj_dir)
+	mean_proj, _ = _mean_zarr_channel(out_dir, archive_dir, "potproj")
+	if mean_proj is not None or cfg.simulations.emit_static_baseline:
+		static_potential = _load_or_build_static_potential(job_dir, cfg)
+		probe = add_probe(cfg, static_potential)
+
+		if mean_proj is not None:
+			_write_projection(
+				mean_proj, probe, cfg, proj_dir, "potential_projection",
+				f"{preview_prefix} — phonon-averaged projection",
+			)
+
+		if cfg.simulations.emit_static_baseline:
+			static_proj = static_potential.project().to_cpu().compute()
+			_write_projection(
+				static_proj, probe, cfg, proj_dir, "potential_projection_static",
+				f"{preview_prefix} — static lattice projection",
+			)
 
 	# Per-k cumulative-mean frames at <vdir>/series/n_<k>/.
 	series_dir = vdir / "series"
@@ -398,7 +396,8 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 			)
 			if diff_mean is not None:
 				_write_pattern_preview(
-					diff_mean, cfg, k_patterns, "diff", "diffraction", figsize=(10, 6),
+					diff_mean, k_patterns, "diff",
+					f"{preview_prefix} — diffraction", figsize=(10, 6),
 				)
 		if cfg.microscope.do_cbed:
 			cbed_mean, seed_counts["cbed"] = _emit_channel(
@@ -407,7 +406,8 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 			)
 			if cbed_mean is not None:
 				_write_pattern_preview(
-					cbed_mean, cfg, k_patterns, "cbed", "CBED", figsize=(8, 6),
+					cbed_mean, k_patterns, "cbed",
+					f"{preview_prefix} — CBED", figsize=(8, 6),
 				)
 		k_dir.mkdir(parents=True, exist_ok=True)
 		seeds = contributing_seeds(out_dir, archive_dir, list(seed_counts), max_seeds=k)

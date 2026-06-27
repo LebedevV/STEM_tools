@@ -29,12 +29,6 @@ def _now_utc_compact() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _phase_stem(phase: str) -> str:
-    phase = str(phase)
-    if phase.lower().endswith(".cif"):
-        return phase[:-4]
-    return phase
-
 def _strip_none(data):
     """Recursively drop dict entries whose value is None.
 
@@ -78,42 +72,6 @@ def _seed_list_from_cfg(cfg_dict: dict[str, Any]) -> list[int]:
 
     n = int(frozen)
     return list(range(seed_start, seed_start + n))
-
-
-def _emit_combined_png(lamella, cfg_frame, hkl, line_hkl, job_dir: Path) -> None:
-    """3-panel atom view (XY / XZ / YZ) with the scan box overlaid on XY.
-    Cheap — no GPU, no abtem multislice. Just matplotlib + ase + abtem.show_atoms.
-    """
-    ls = cfg_frame.lamella_settings
-    borders = ls.borders
-    scan_s = ls.scan_s
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    abtem.show_atoms(lamella, ax=axes[0], title="XY projection")
-    # Scan-box overlay: atoms are placed with vac_xy=borders offset, scan area
-    # is [2*borders, 2*borders + scan_s] in the world coords.
-    rect = mpatches.Rectangle(
-        (borders * 2, borders * 2),
-        scan_s,
-        scan_s,
-        fill=False,
-        edgecolor="red",
-        linewidth=1.5,
-    )
-    axes[0].add_patch(rect)
-    abtem.show_atoms(lamella, ax=axes[1], title="Cross-section XZ", plane="xz")
-    abtem.show_atoms(lamella, ax=axes[2], title="Cross-section YZ", plane="yz")
-
-    sample_name = cfg_frame.paths.sample_name
-    sg = _phase_stem(cfg_frame.job.phase)
-    vec_kind = "uvw" if cfg_frame.job.is_uvw else "hkl"
-    fig.suptitle(
-        f"{sample_name}, {sg}, {vec_kind} [{line_hkl}]",
-        fontsize=18,
-    )
-    fig.tight_layout()
-    fig.savefig(str(job_dir / "combined.png"), dpi=300)
-    plt.close(fig)
 
 
 def _tagval(v) -> str:
@@ -181,7 +139,7 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
 
         for phase in phase_iter:
             phase = str(phase)
-            phase_name = _phase_stem(phase)
+            phase_name = phase[:-4] if phase.lower().endswith(".cif") else phase
 
             for hkl in hkls:
                 line_hkl = "".join(str(x) for x in hkl)
@@ -204,7 +162,26 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
                 lamella = build_lamella_from_config(cfg_frame_for_phase, hkl)
                 # extxyz preserves the cell box; plain xyz drops it.
                 ase.io.write(str(job_dir / "surf.xyz"), lamella, "extxyz")
-                _emit_combined_png(lamella, cfg_frame_for_phase, hkl, line_hkl, job_dir)
+
+                fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+                abtem.show_atoms(lamella, ax=axes[0], title="XY projection")
+                scan_s = cfg_frame_for_phase.lamella_settings.scan_s
+                borders = cfg_frame_for_phase.lamella_settings.borders
+                axes[0].add_patch(mpatches.Rectangle(
+                    (borders * 2, borders * 2), scan_s, scan_s,
+                    fill=False, edgecolor="red", linewidth=1.5,
+                ))
+                abtem.show_atoms(lamella, ax=axes[1], title="Cross-section XZ", plane="xz")
+                abtem.show_atoms(lamella, ax=axes[2], title="Cross-section YZ", plane="yz")
+                vec_kind = "uvw" if cfg_frame_for_phase.job.is_uvw else "hkl"
+                fig.suptitle(
+                    f"{cfg_frame_for_phase.paths.sample_name}, {phase_name}, "
+                    f"{vec_kind} [{line_hkl}]",
+                    fontsize=18,
+                )
+                fig.tight_layout()
+                fig.savefig(str(job_dir / "combined.png"), dpi=300)
+                plt.close(fig)
 
                 for s in seeds:
                     write_seed_todo(job_dir / "seeds", s, replace=True)
