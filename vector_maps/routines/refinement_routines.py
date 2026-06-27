@@ -432,7 +432,7 @@ def redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars, i
 	"""
 	from .detect_columns import detect_columns
 	folder = os.path.join(str(folder), "")
-	stem = os.path.splitext(os.path.basename(fname))[0]
+	stem = frame_stem(fname)
 	img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
 	H, W = img.shape[:2]
 	param_vec = dicts_to_vector(lat_params, motif, extra_pars)[0]
@@ -457,7 +457,7 @@ def _redetect_scratch(image, folder, fname, calib, out_suffix="_scratch"):
 	"""
 	from .detect_columns import detect_columns
 	folder = os.path.join(str(folder), "")
-	stem = os.path.splitext(os.path.basename(fname))[0]
+	stem = frame_stem(fname)
 	H, W = image.shape[:2]
 	fig, ax = plt.subplots(figsize=(8, 7))
 	fig.subplots_adjust(left=0.28, bottom=0.28)

@@ -4,8 +4,6 @@ __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
 import os
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -16,7 +14,7 @@ import atomap.api as am
 import scipy
 import scipy.ndimage
 
-from .routines import resolve_frame_path
+from .routines import frame_stem, resolve_frame_path
 
 
 
@@ -40,7 +38,7 @@ def detect_columns(
 	if not folder.endswith(os.sep):
 		folder += os.sep
 		
-	stem = Path(fname).stem + out_suffix
+	stem = frame_stem(fname) + out_suffix
 
 	#fpath = os.path.join(folder, fname)
 	

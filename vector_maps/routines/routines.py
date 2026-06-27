@@ -36,17 +36,27 @@ def rotate_vec(v,an):
 	#print(x,y)
 	return x,y
 
+def frame_stem(fname):
+	'''Return the frame stem, stripping only known TIFF suffixes.
+
+	os.path.splitext()/Path.stem are unsafe for extensionless simulation names like
+	``fph_Pm3m_(25.0, 10.0)_110_haadf_0-25`` because they treat the last
+	decimal point as an extension boundary.
+	'''
+	name = os.path.basename(str(fname))
+	low = name.lower()
+	if low.endswith('.tiff'):
+		return name[:-5]
+	if low.endswith('.tif'):
+		return name[:-4]
+	return name
+
+
 def resolve_frame_path(folder, fname):
 	'''Path to the frame TIFF, accepting .tif/.tiff/.TIF/.TIFF (a trailing tiff
 	extension on `fname` is ignored). If several variants are present they must be
 	byte-identical, otherwise it raises.'''
-	low = fname.lower()
-	if low.endswith('.tiff'):
-		stem = fname[:-5]
-	elif low.endswith('.tif'):
-		stem = fname[:-4]
-	else:
-		stem = fname
+	stem = frame_stem(fname)
 	cands = [os.path.join(folder, stem + ext) for ext in ('.tif', '.tiff', '.TIF', '.TIFF')]
 	found = [p for p in cands if os.path.exists(p)]
 	if not found:
