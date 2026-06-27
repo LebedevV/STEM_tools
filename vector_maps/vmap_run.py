@@ -235,7 +235,7 @@ def _run_detect(d, folder, fname, current, name, lat_params, motif, extra_pars, 
         if d.seed == "fit":
             # only the peak-finding is skipped -- detect_columns still 2D-gaussian-refines the seeds
             redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars,
-                                  gen_ij((-170, 170)), ptonn=d.ptonn, out_suffix="")
+                                  ptonn=d.ptonn, out_suffix="")
         else:
             detect(out_suffix="")
         out_path = _xyi_csv_path(folder, fname)

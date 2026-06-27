@@ -449,27 +449,43 @@ def _review_obs(image, obs_px, calib, title=""):
 	return out['ok']
 
 
-def redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars, ij, ptonn=0.6, out_suffix="_redetect"):
+def redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars, ij=None,
+					  ptonn=0.6, out_suffix="_redetect", ij_range=(-170, 170),
+					  full_grid=True):
 	"""Seed atomap with the current lattice and re-fit the columns onto it.
 
-	Builds the theoretical sites from (lat_params, motif), cropped to the frame, writes
-	them as a pixel-space seed CSV, runs detect_columns(start_csv=...) to refine, and
-	returns the path of the new <stem><out_suffix>_xyI.csv. The GUI 'redetect (lattice
-	seed)' button wraps this. Image-dependent -- verified on a real frame, not unit-tested.
+	By default this regenerates a fresh full-frame ``ij`` grid from the fitted
+	lattice instead of reusing the paired/cropped ``ij`` set from the fit pass.
+	That keeps the fit itself restricted to ``sub_area`` while the seeded rerun
+	and its ``*_diff2.tif`` subtraction cover the whole image.
+
+	Set ``full_grid=False`` only for the legacy GUI behaviour where an explicit
+	``ij`` array should be respected.
 	"""
 	from .detect_columns import detect_columns
 	folder = os.path.join(str(folder), "")
 	stem = frame_stem(fname)
 	img = cv2.imread(resolve_frame_path(folder, fname), cv2.IMREAD_UNCHANGED)
+	if img is None:
+		raise FileNotFoundError(resolve_frame_path(folder, fname))
 	H, W = img.shape[:2]
 	param_vec = dicts_to_vector(lat_params, motif, extra_pars)[0]
-	# crop the theoretical sites to the frame extent (nm) so the atomap seeds stay in-image
-	theor_nm, _, _ = get_coords_from_ij(ij, param_vec, (W * calib, H * calib), lat_params, motif, extra_pars, crop=True)
+	if full_grid or ij is None:
+		ij = gen_ij(tuple(ij_range))
+	# Crop only after rebuilding the theoretical lattice over the requested full
+	# range, so atomap seeds stay in-image without inheriting the fit crop.
+	theor_nm, _, _ = get_coords_from_ij(ij, param_vec, (W * calib, H * calib),
+							 lat_params, motif, extra_pars, crop=True)
 	seed_px = np.asarray(theor_nm) / calib          # detected coords are pixels; theory is nm
 	inb = (seed_px[:, 0] >= 0) & (seed_px[:, 0] < W) & (seed_px[:, 1] >= 0) & (seed_px[:, 1] < H)
 	seed_px = seed_px[inb]                           # atomap can't seed outside the image
+	if len(seed_px) == 0:
+		raise RuntimeError(
+			f"redetect_from_lattice produced zero in-frame seed positions for {fname!r}"
+		)
 	seed_path = folder + stem + out_suffix + "_seed.csv"
 	pd.DataFrame({"x_obs0": seed_px[:, 0], "y_obs0": seed_px[:, 1]}).to_csv(seed_path, index=False)
+	print(f"redetect_from_lattice: wrote {len(seed_px)} full-grid seeds -> {seed_path}")
 	detect_columns(fname=fname, folder=folder, imsize=(int(W), int(H)), sep=10,
 		       start_csv=seed_path, interactive=False, ptonn=ptonn, out_suffix=out_suffix)
 	return folder + stem + out_suffix + "_xyI.csv"
