@@ -39,7 +39,7 @@ import ase.io
 import numpy as np
 
 from ._log import configure_default_logging
-from .config import load_config
+from .job_io import load_job_config, seed_from_path
 from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, add_scan, load_ground_state_atoms
 
@@ -106,22 +106,6 @@ def _install_preemption_handler(
 # --------------------------------------------------------------------------- #
 # Building blocks — factored so an in-memory wrapper can compose them without I/O.
 # --------------------------------------------------------------------------- #
-
-
-def _seed_from_todo(todo_path: Path) -> int:
-	"""Parse ``seed_NNNNNN.todo`` → ``NNNNNN``."""
-	stem = todo_path.stem  # e.g. 'seed_000042'
-	prefix = "seed_"
-	if not stem.startswith(prefix):
-		raise ValueError(
-			f"Expected todo filename like 'seed_NNNNNN.todo', got {todo_path.name!r}"
-		)
-	try:
-		return int(stem[len(prefix):])
-	except ValueError as e:
-		raise ValueError(
-			f"Could not parse seed number from {todo_path.name!r}: {e}"
-		) from e
 
 
 def _claim_todo(todo_path: Path) -> Path:
@@ -275,21 +259,11 @@ def run_one_seed(job_dir, todo_path) -> None:
 	job_dir = Path(job_dir).resolve()
 	todo_path = Path(todo_path).resolve()
 
-	seed = _seed_from_todo(todo_path)
+	seed = seed_from_path(todo_path)
 	running_path = _claim_todo(todo_path)
 
 	try:
-		# Locate the job-local TOML (one *.toml at the job_dir root).
-		toml_candidates = list(job_dir.glob("*.toml"))
-		if not toml_candidates:
-			raise FileNotFoundError(f"No *.toml in job_dir {job_dir}")
-		if len(toml_candidates) > 1:
-			raise ValueError(
-				f"Expected one *.toml in {job_dir}, found {len(toml_candidates)}: "
-				f"{[p.name for p in toml_candidates]}"
-			)
-
-		cfg = load_config(toml_candidates[0])
+		_, cfg = load_job_config(job_dir)
 		ctx = resolve_context(cfg)
 
 		out_dir = job_dir / "outputs"

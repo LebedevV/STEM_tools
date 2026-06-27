@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import tomli_w
 
 from . import config as confread
+from .job_io import write_seed_todo
 from .pipeline import expand_cfg
 from .simulation import build_lamella_from_config
 
@@ -238,12 +239,8 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
                 _emit_planning_artifacts(cfg_frame_for_phase, hkl, line_hkl, job_dir)
 
                 # Create one .todo per seed (or seed 0 baseline if no phonons).
-                # Atomic write via tmp + os.replace; seeds/ already exists.
                 for s in seeds:
-                    todo = job_dir / "seeds" / f"seed_{s:06d}.todo"
-                    tmp = todo.with_suffix(todo.suffix + ".tmp")
-                    tmp.write_text(f"{s}\n", encoding="utf-8")
-                    os.replace(tmp, todo)
+                    write_seed_todo(job_dir / "seeds", s, replace=True)
 
                 manifest["jobs"].append(
                     {

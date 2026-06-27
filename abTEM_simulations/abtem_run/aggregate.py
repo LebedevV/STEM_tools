@@ -45,7 +45,7 @@ import abtem
 import matplotlib.pyplot as plt
 
 from ._log import configure_default_logging
-from .config import load_config
+from .job_io import collect_seed_zarrs, contributing_seeds, load_job_config
 from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, load_ground_state_atoms
 
@@ -56,36 +56,6 @@ log = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-
-
-def _collect_seed_zarrs(out_dir: Path, archive_dir: Path, channel_name: str) -> list[Path]:
-	"""``seed_*_<channel>.zarr`` from outputs/ ∪ outputs_archive/, sorted by
-	seed integer. outputs/ wins on a duplicate seed."""
-	def _seed_key(p: Path) -> int:
-		return int(p.stem.split("_")[1])
-
-	collected: dict[int, Path] = {}
-	if archive_dir.exists():
-		for p in archive_dir.glob(f"seed_*_{channel_name}.zarr"):
-			collected[_seed_key(p)] = p
-	if out_dir.exists():
-		for p in out_dir.glob(f"seed_*_{channel_name}.zarr"):
-			collected[_seed_key(p)] = p
-	return [collected[k] for k in sorted(collected)]
-
-
-def _load_job_config(job_dir: Path):
-	"""Load the single per-job TOML -> (toml_path, AppConfig). Raises if zero
-	or more than one *.toml is present."""
-	toml_candidates = list(job_dir.glob("*.toml"))
-	if not toml_candidates:
-		raise FileNotFoundError(f"No *.toml in {job_dir}")
-	if len(toml_candidates) > 1:
-		raise ValueError(
-			f"Expected one *.toml in {job_dir}, found {len(toml_candidates)}: "
-			f"{[p.name for p in toml_candidates]}"
-		)
-	return toml_candidates[0], load_config(toml_candidates[0])
 
 
 def _config_hash(cfg) -> str:
@@ -123,22 +93,8 @@ def version_dir_for(job_dir, *, force_new: bool = False) -> Path:
 	the newest dir matching the config hash, or create one. Public so the
 	to_ensemble bridge co-locates its output with the matching aggregate."""
 	job_dir = Path(job_dir).resolve()
-	_, cfg = _load_job_config(job_dir)
+	_, cfg = load_job_config(job_dir)
 	return _resolve_version_dir(job_dir / "aggregate", cfg, force_new=force_new)
-
-
-def _contributing_seeds(out_dir: Path, archive_dir: Path, channels, *, max_seeds: int | None = None) -> list[int]:
-	"""Sorted union of seed integers across ``channels`` (atoms-level: one seed
-	displaces the lattice once and feeds every channel). ``max_seeds`` mirrors
-	the per-channel cap used for the cumulative series."""
-	ids: set[int] = set()
-	for ch in channels:
-		files = _collect_seed_zarrs(out_dir, archive_dir, ch)
-		if max_seeds is not None:
-			files = files[:max_seeds]
-		for p in files:
-			ids.add(int(p.stem.split("_")[1]))
-	return sorted(ids)
 
 
 def _write_seed_provenance(target_dir: Path, seeds: list[int], counts: dict[str, int]) -> None:
@@ -190,7 +146,7 @@ def _mean_zarr_channel(out_dir: Path, archive_dir: Path, channel_name: str, *, m
 	"""Cross-seed mean of ``seed_*_<channel_name>.zarr`` over outputs/ ∪
 	outputs_archive/ + the contributing-seed count; ``(None, 0)`` if none
 	exist. ``max_seeds`` caps to the first N."""
-	zarr_files = _collect_seed_zarrs(out_dir, archive_dir, channel_name)
+	zarr_files = collect_seed_zarrs(out_dir, archive_dir, channel_name)
 	if max_seeds is not None:
 		zarr_files = zarr_files[:max_seeds]
 	if not zarr_files:
@@ -392,7 +348,7 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 				"Run all workers before aggregating."
 			)
 
-	_, cfg = _load_job_config(job_dir)
+	_, cfg = load_job_config(job_dir)
 	ctx = resolve_context(cfg)
 
 	vdir = _resolve_version_dir(agg_dir, cfg, force_new=force_new)
@@ -421,7 +377,7 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 			_write_pattern_preview(cbed_mean, cfg, patterns_dir, "cbed", "CBED", figsize=(8, 6))
 
 	# 4. Seed provenance -> <vdir>/seed_counts.json (atoms-level seeds + counts).
-	seeds = _contributing_seeds(out_dir, archive_dir, list(seed_counts))
+	seeds = contributing_seeds(out_dir, archive_dir, list(seed_counts))
 	_write_seed_provenance(vdir, seeds, seed_counts)
 
 	# 5. Projection preview(s) -> projections/: phonon-averaged + optional static.
@@ -467,7 +423,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 				"Run all workers before aggregating."
 			)
 
-	_, cfg = _load_job_config(job_dir)
+	_, cfg = load_job_config(job_dir)
 	ctx = resolve_context(cfg)
 	vdir = _resolve_version_dir(agg_dir, cfg, force_new=force_new)
 	proj_dir = vdir / "projections"
@@ -483,7 +439,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 		probe_channels.append("cbed")
 	total_seeds = 0
 	for ch in probe_channels:
-		total_seeds = len(_collect_seed_zarrs(out_dir, archive_dir, ch))
+		total_seeds = len(collect_seed_zarrs(out_dir, archive_dir, ch))
 		if total_seeds:
 			break
 	if total_seeds == 0:
@@ -536,7 +492,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 					cbed_mean, cfg, k_patterns, "cbed", "CBED", figsize=(8, 6),
 				)
 		k_dir.mkdir(parents=True, exist_ok=True)
-		seeds = _contributing_seeds(out_dir, archive_dir, list(seed_counts), max_seeds=k)
+		seeds = contributing_seeds(out_dir, archive_dir, list(seed_counts), max_seeds=k)
 		_write_seed_provenance(k_dir, seeds, seed_counts)
 
 	return n_max

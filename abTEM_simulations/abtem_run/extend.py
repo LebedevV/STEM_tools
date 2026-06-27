@@ -27,31 +27,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import load_config
-
-
-def _scan_used_seeds(job_dir: Path) -> set[int]:
-	"""Seed integers ever processed: outputs/ + outputs_archive/ zarrs, plus
-	seeds/*.{todo,done} so still-pending seeds aren't re-queued."""
-	used: set[int] = set()
-	for sub in ("outputs", "outputs_archive"):
-		d = job_dir / sub
-		if not d.exists():
-			continue
-		for p in d.glob("seed_*_*.zarr"):
-			try:
-				used.add(int(p.stem.split("_")[1]))
-			except (ValueError, IndexError):
-				pass
-	seeds_dir = job_dir / "seeds"
-	if seeds_dir.exists():
-		for pattern in ("seed_*.todo", "seed_*.done"):
-			for p in seeds_dir.glob(pattern):
-				try:
-					used.add(int(p.stem.split("_")[1]))
-				except (ValueError, IndexError):
-					pass
-	return used
+from .job_io import load_job_config, scan_used_seeds, write_seed_todo
 
 
 def _append_extension_log(job_dir: Path, *, added: list[int], source: str) -> None:
@@ -98,23 +74,15 @@ def extend_job(
 	if (add is None) == (seeds is None):
 		raise ValueError("extend_job requires exactly one of `add` or `seeds`")
 
-	toml_candidates = list(job_dir.glob("*.toml"))
-	if not toml_candidates:
-		raise FileNotFoundError(f"No *.toml in {job_dir}")
-	if len(toml_candidates) > 1:
-		raise ValueError(
-			f"Expected one *.toml in {job_dir}, found {len(toml_candidates)}: "
-			f"{[p.name for p in toml_candidates]}"
-		)
-	# load_config is invoked for parity with the worker / aggregator entry
-	# checks; the schema validation surfaces malformed TOMLs early.
-	load_config(toml_candidates[0])
+	# Load for parity with the worker / aggregator entry checks; schema
+	# validation surfaces malformed TOMLs early.
+	load_job_config(job_dir)
 
-	used = _scan_used_seeds(job_dir)
+	used = scan_used_seeds(job_dir)
 	if not used:
 		raise ValueError(
 			f"no prior seeds in {job_dir} (outputs/, outputs_archive/, and "
-			"seeds/*.{todo,done} are all empty). Run the initial pipeline first."
+			"seeds/*.{todo,running,done} are all empty). Run the initial pipeline first."
 		)
 
 	if add is not None:
@@ -140,11 +108,8 @@ def extend_job(
 		source = "seeds"
 
 	seeds_dir = job_dir / "seeds"
-	seeds_dir.mkdir(parents=True, exist_ok=True)
 	for s in new_seeds:
-		todo = seeds_dir / f"seed_{s:06d}.todo"
-		with todo.open("x") as f:
-			f.write(f"{s}\n")
+		write_seed_todo(seeds_dir, s)
 
 	_append_extension_log(job_dir, added=new_seeds, source=source)
 	return new_seeds

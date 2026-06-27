@@ -51,6 +51,8 @@ from pathlib import Path
 
 import abtem
 
+from .job_io import collect_seed_zarrs
+
 
 # --------------------------------------------------------------------------- #
 # Internals
@@ -114,11 +116,9 @@ def load_ensemble(job_dir, channel: str):
 	out_dir = job_dir / "outputs"
 	archive_dir = job_dir / "outputs_archive"
 
-	# Reuse the aggregator's deterministic seed-collection helper so
-	# ordering and dedup semantics stay identical to the cumulative-mean
-	# pathway.
-	from .aggregate import _collect_seed_zarrs
-	zarrs = _collect_seed_zarrs(out_dir, archive_dir, channel)
+	# Use the same deterministic seed ordering and duplicate-handling as
+	# the cumulative-mean pathway.
+	zarrs = collect_seed_zarrs(out_dir, archive_dir, channel)
 	if not zarrs:
 		return None
 
