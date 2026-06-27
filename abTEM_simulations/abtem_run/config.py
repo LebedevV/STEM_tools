@@ -10,7 +10,23 @@ from pathlib import Path
 from typing import Any, Literal
 
 import tomllib
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _map_scalar_or_list(v: Any, validate_one):
+	"""Apply a scalar validator to either a scalar config value or a sweep list."""
+	if isinstance(v, list):
+		if not v:
+			raise ValueError("sweep lists must not be empty")
+		return [validate_one(x) for x in v]
+	return validate_one(v)
+
+
+def _finite_number(v: Any, field_name: str) -> float:
+	"""Return v as float, rejecting bools and non-numeric values early."""
+	if isinstance(v, bool) or not isinstance(v, (int, float)):
+		raise ValueError(f"{field_name} must be numeric, got {v!r}")
+	return float(v)
 
 #If adding a new class of variables, add it to AppConfig, too!
 class Paths(BaseModel):
@@ -152,6 +168,49 @@ class Simulations(BaseModel):
 	# per channel: <vdir>/scans/<channel>_<sigma>.tif. [] skips the blur previews.
 	blur_sigmas: list[float] = Field(default_factory=lambda: [0.025, 0.1, 0.25])
 
+	@field_validator("override_sampling", mode="before")
+	@classmethod
+	def validate_override_sampling(cls, v: Any):
+		if v is False:
+			return False
+		if isinstance(v, bool):
+			raise ValueError("override_sampling must be false or a positive number")
+		sampling = _finite_number(v, "override_sampling")
+		if sampling <= 0:
+			raise ValueError("override_sampling must be > 0, or false to use the default")
+		return sampling
+
+	@field_validator("frozen_phonons", mode="before")
+	@classmethod
+	def validate_frozen_phonons(cls, v: Any):
+		def one(x: Any):
+			if isinstance(x, bool):
+				raise ValueError("frozen_phonons cannot be a bool")
+			if isinstance(x, str):
+				if x == "None":
+					return x
+				raise ValueError("frozen_phonons as a string must be exactly 'None'")
+			if not isinstance(x, int):
+				raise ValueError(f"frozen_phonons must be an int >= 1 or 'None', got {x!r}")
+			if x < 1:
+				raise ValueError(f"frozen_phonons must be >= 1, got {x}")
+			return x
+		return _map_scalar_or_list(v, one)
+
+	@field_validator("fph_sigma", mode="before")
+	@classmethod
+	def validate_fph_sigma(cls, v: Any):
+		def one(x: Any):
+			if x is False:
+				return False
+			if isinstance(x, bool):
+				raise ValueError("fph_sigma must be false or a non-negative number")
+			sigma = _finite_number(x, "fph_sigma")
+			if sigma < 0:
+				raise ValueError(f"fph_sigma must be >= 0, got {sigma}")
+			return sigma
+		return _map_scalar_or_list(v, one)
+
 	@field_validator("blur_sigmas", mode="before")
 	@classmethod
 	def validate_blur_sigmas(cls, v: Any):
@@ -189,6 +248,48 @@ class Microscope(BaseModel):
 	# Phase aberrations passed to abtem.Probe(aberrations=...). Defocus / C10
 	# are rejected — use the `defocus` field above.
 	aberrations: dict[str, float] = Field(default_factory=dict)
+
+	@field_validator("HT_value", mode="before")
+	@classmethod
+	def validate_HT_value(cls, v: Any):
+		def one(x: Any):
+			if isinstance(x, bool) or not isinstance(x, int):
+				raise ValueError(f"HT_value must be an int in eV, got {x!r}")
+			if x <= 0:
+				raise ValueError(f"HT_value must be > 0, got {x}")
+			return x
+		return _map_scalar_or_list(v, one)
+
+	@field_validator("convergence_angle", mode="before")
+	@classmethod
+	def validate_convergence_angle(cls, v: Any):
+		angle = _finite_number(v, "convergence_angle")
+		if angle <= 0:
+			raise ValueError("convergence_angle must be > 0")
+		return angle
+
+	@field_validator(
+		"haadfinner", "haadfouter", "abfinner", "abfouter",
+		"bfinner", "bfouter", mode="before",
+	)
+	@classmethod
+	def validate_detector_angle(cls, v: Any):
+		angle = _finite_number(v, "detector angle")
+		if angle < 0:
+			raise ValueError("detector angles must be >= 0")
+		return angle
+
+	@model_validator(mode="after")
+	def validate_detector_ranges(self):
+		for name in ("haadf", "abf", "bf"):
+			inner = getattr(self, f"{name}inner")
+			outer = getattr(self, f"{name}outer")
+			if outer <= inner:
+				raise ValueError(
+					f"{name} detector requires outer > inner, got "
+					f"inner={inner}, outer={outer}"
+				)
+		return self
 
 	@field_validator("defocus", mode="before")
 	@classmethod
@@ -258,6 +359,56 @@ class LamellaSettings(BaseModel):
 	element_to_remove: str = Field()
 	probability_of_vac: float | list[float] = Field()
 	vacancies_seed: int = Field(default=0)  # RNG seed for add_vacancies; distinct from job.phonons_seed
+
+	@field_validator("max_uvw", mode="before")
+	@classmethod
+	def validate_max_uvw(cls, v: Any):
+		if isinstance(v, bool) or not isinstance(v, int):
+			raise ValueError(f"max_uvw must be an int > 0, got {v!r}")
+		if v <= 0:
+			raise ValueError(f"max_uvw must be > 0, got {v}")
+		return v
+
+	@field_validator("sblock_size", "scan_s", mode="before")
+	@classmethod
+	def validate_positive_scalar_length(cls, v: Any):
+		value = _finite_number(v, "length")
+		if value <= 0:
+			raise ValueError("sblock_size and scan_s must be > 0")
+		return value
+
+	@field_validator("thickness", mode="before")
+	@classmethod
+	def validate_thickness(cls, v: Any):
+		def one(x: Any):
+			value = _finite_number(x, "thickness")
+			if value <= 0:
+				raise ValueError(f"thickness must be > 0, got {value}")
+			return value
+		return _map_scalar_or_list(v, one)
+
+	@field_validator("borders", "tol", mode="before")
+	@classmethod
+	def validate_nonnegative_scalar_length(cls, v: Any):
+		value = _finite_number(v, "length")
+		if value < 0:
+			raise ValueError("borders and tol must be >= 0")
+		return value
+
+	@field_validator("probability_of_vac", mode="before")
+	@classmethod
+	def validate_probability_of_vac(cls, v: Any):
+		def one(x: Any):
+			prob = _finite_number(x, "probability_of_vac")
+			if not 0 <= prob <= 1:
+				raise ValueError(f"probability_of_vac must be in [0, 1], got {prob}")
+			return prob
+		return _map_scalar_or_list(v, one)
+
+	@field_validator("global_tilt_a", "global_tilt_b", mode="before")
+	@classmethod
+	def validate_global_tilt(cls, v: Any):
+		return _map_scalar_or_list(v, lambda x: _finite_number(x, "global_tilt"))
 
 class AppConfig(BaseModel):
 	paths: Paths

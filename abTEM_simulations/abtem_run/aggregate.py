@@ -512,7 +512,8 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 			for det_name in ctx.detectors:
 				_, seed_counts[det_name] = _emit_channel(
 					out_dir, archive_dir, k_scans, det_name,
-					with_blurs=True, blur_sigmas=ctx.blur_sigmas, max_seeds=k,
+					with_blurs=True, blur_sigmas=ctx.blur_sigmas,
+					blur_boundary=ctx.blur_boundary, max_seeds=k,
 				)
 		if ctx.do_diffraction or ctx.do_cbed:
 			k_patterns.mkdir(parents=True, exist_ok=True)
