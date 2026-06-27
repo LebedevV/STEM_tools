@@ -21,7 +21,7 @@ import abtem
 import ase.io
 import numpy as np
 
-from ._log import configure_default_logging
+from .compat import bootstrap
 from .job_io import load_job_config, seed_from_path
 from .pipeline import cpu_fft_backend, make_potential, resolve_context
 from .simulation import add_probe, add_scan, load_ground_state_atoms
@@ -279,7 +279,7 @@ def run_one_seed(job_dir, todo_path) -> None:
 
 def main():
 	"""Module entry point for ``python -m abtem_run.worker``."""
-	configure_default_logging()
+	bootstrap()
 	parser = argparse.ArgumentParser(
 		description=(
 			"abtem_run worker: claim one .todo as .running, write per-seed "

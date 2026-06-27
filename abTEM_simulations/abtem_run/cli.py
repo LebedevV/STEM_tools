@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-from ._log import configure_default_logging
+from .compat import bootstrap
 from .aggregate import aggregate_job, aggregate_series
 from .config import load_config
 from .generator_run import generate_run
@@ -93,7 +93,7 @@ def run_pipeline(
 
 def main():
 	"""Source-tree entry point used by ``python run.py``."""
-	configure_default_logging()
+	bootstrap()
 	parser = argparse.ArgumentParser(
 		prog="python run.py",
 		description=(

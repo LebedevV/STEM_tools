@@ -15,6 +15,7 @@ from pathlib import Path
 
 import abtem
 
+from .compat import bootstrap
 from .job_io import collect_seed_zarrs
 
 
@@ -179,6 +180,7 @@ def to_ensemble_files(
 
 def main():
 	"""Module entry point."""
+	bootstrap()
 	parser = argparse.ArgumentParser(
 		description="Convert per-seed zarrs into abTEM ensemble zarrs."
 	)

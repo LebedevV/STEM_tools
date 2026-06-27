@@ -136,4 +136,16 @@ def apply_abtem_patches() -> dict[str, bool]:
 	return dict(_PATCHES_APPLIED)
 
 
-__all__ = ["apply_abtem_patches", "_PATCHES_APPLIED"]
+def bootstrap() -> None:
+	"""Entry-point setup: apply the abTEM patches, then configure logging.
+
+	Every console script and the ``run.py`` / ``python -m`` entries call this
+	before any abTEM work, so the patches land no matter which entry point
+	started the process. Idempotent — both steps guard against re-running.
+	"""
+	apply_abtem_patches()
+	from ._log import configure_default_logging
+	configure_default_logging()
+
+
+__all__ = ["apply_abtem_patches", "bootstrap", "_PATCHES_APPLIED"]
