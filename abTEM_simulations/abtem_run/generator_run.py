@@ -260,16 +260,14 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
 
 
 def main():
-    """``abtem-run-generate`` console-script entry: plan the job tree from a TOML
-    config (no GPU). Writes ``gen_<UTC>/`` with per-seed ``.todo`` files +
-    planning artifacts (surf.xyz, combined.png)."""
+    """Module entry point for queue generation."""
     import argparse
     import sys
     from ._log import configure_default_logging
     configure_default_logging()
     parser = argparse.ArgumentParser(
-        prog="abtem-run-generate",
-        description="Generate the per-seed work queue + planning artifacts from a TOML config.",
+        prog="python -m abtem_run.generator_run",
+        description="Generate the per-seed work queue and planning artifacts.",
     )
     parser.add_argument(
         "config", nargs="?", default="config.toml",

@@ -1,15 +1,4 @@
-"""Shared filesystem conventions for abtem_run job directories.
-
-The worker, aggregator, extender, and ensemble bridge all need to agree on
-three small pieces of job-dir state:
-
-- a job has exactly one job-local ``*.toml``;
-- seed state files are named ``seeds/seed_NNNNNN.{todo,running,done}``;
-- per-seed outputs are named ``outputs/seed_NNNNNN_<channel>.zarr``.
-
-Keeping those rules here avoids a class of tiny, duplicated parsers drifting
-apart across modules.
-"""
+"""Shared job-directory naming and discovery helpers."""
 from __future__ import annotations
 
 import os

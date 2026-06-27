@@ -3,28 +3,11 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-"""
-Push-mode per-seed worker for the abtem-run worker pipeline.
+"""Per-seed worker.
 
-Consumes ONE ``seeds/seed_NNNNNN.todo`` file in a job directory, atomically
-claims it as ``seed_NNNNNN.running``, runs the multislice for that single
-phonon snapshot, writes outputs to ``outputs/seed_NNNNNN_<channel>.{zarr,tif}``,
-and renames the claim to ``.done`` on success.
-
-Push interface (the worker is stateless; the caller — bash loop, GNU
-parallel, slurm, or the convenience wrapper — supplies the .todo path):
-
-    python -m abtem_run.worker <job_dir> <todo_path>
-
-Library entry:
-
-    from abtem_run.worker import run_one_seed
-    run_one_seed(job_dir, todo_path)
-
-Every seed goes through the same code path — there is no special
-"static lattice" branch. To produce a static-lattice result, configure
-``fph_sigma = false`` and ``frozen_phonons = 1``; the worker will run
-with zero displacement.
+Claims one ``seed_NNNNNN.todo`` as ``.running``, computes that phonon snapshot,
+writes ``outputs/seed_NNNNNN_<channel>.{zarr,tif}``, and marks the seed
+``.done`` on success.
 """
 import argparse
 import logging
@@ -48,11 +31,7 @@ log = logging.getLogger(__name__)
 
 
 def _cleanup_seed_outputs(out_dir: Path, seed: int) -> None:
-	"""Remove this seed's partial outputs/seed_NNNNNN_* files. Used on a
-	signal (SIGTERM from spot preemption / SIGINT from ^C): a half-written
-	zarr would otherwise be picked up by the aggregator's seed_*_<ch>.zarr
-	glob and silently contaminate the cross-seed mean.
-	"""
+	"""Remove partial outputs for one seed."""
 	if not out_dir.exists():
 		return
 	for p in out_dir.glob(f"seed_{seed:06d}_*"):
@@ -72,10 +51,7 @@ def _install_preemption_handler(
 	todo_path: Path | None = None,
 	running_path: Path | None = None,
 ):
-	"""Trap SIGTERM (spot 2-minute warning) and SIGINT (^C) so we clean
-	the partial seed outputs before exiting. Returns a callable that
-	restores the previous handlers. No-op when not on the main thread
-	(``signal.signal`` is main-thread-only)."""
+	"""Install signal cleanup and return a handler-restoration callable."""
 	if threading.current_thread() is not threading.main_thread():
 		return lambda: None
 
@@ -87,9 +63,7 @@ def _install_preemption_handler(
 		_cleanup_seed_outputs(out_dir, seed)
 		if todo_path is not None and running_path is not None:
 			_requeue_running(todo_path, running_path)
-		# Restore default + re-raise so the process exits with the right
-		# status code (SIGTERM => 143, SIGINT => 130) and any parent
-		# orchestrator sees a clean signal-termination.
+		# Re-raise with the original signal semantics.
 		signal.signal(signum, signal.SIG_DFL)
 		signal.raise_signal(signum)
 
@@ -104,7 +78,7 @@ def _install_preemption_handler(
 
 
 # --------------------------------------------------------------------------- #
-# Building blocks — factored so an in-memory wrapper can compose them without I/O.
+# Building blocks
 # --------------------------------------------------------------------------- #
 
 
@@ -180,7 +154,7 @@ def run_scan(ctx, potential, detector_objs):
 	a single ensemble there, not a 1-element list).
 	"""
 	# Reuse the proven probe/scan builders (single source of truth, shared
-	# with the legacy pipeline + the aggregator's projection preview).
+	# shared with the aggregator projection preview).
 	probe = add_probe(ctx, potential)
 	scan = add_scan(ctx, probe, potential)
 
@@ -194,8 +168,7 @@ def run_diffraction(ctx, potential):
 	"""Plane-wave multislice → diffraction patterns. Returns a CPU-side
 	per-snapshot pattern (no ensemble averaging — that's the aggregator's
 	job, since this worker handles a single seed)."""
-	# CPU-side multislice first (matches the proven legacy plot_diffraction
-	# path), with a real fallback to the potential's native device.
+	# CPU-side multislice first, then fallback to the potential's native device.
 	pw = abtem.PlaneWave(energy=ctx.HT_value, device="cpu")
 	try:
 		exit_waves = pw.multislice(potential.to_cpu()).compute()

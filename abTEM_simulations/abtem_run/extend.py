@@ -3,22 +3,11 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-"""
-``abtem-run-extend`` — append more phonon snapshots to an existing job dir.
+"""Append non-overlapping phonon seeds to an existing job directory.
 
-Emits new ``seeds/seed_*.todo`` files with non-overlapping seed integers so
-a follow-up worker + aggregator pass produces the cumulative mean over the
-union of old (archived) + new seeds.
-
-CLI:
-  abtem-run-extend <job_dir> --add N
-  abtem-run-extend <job_dir> --seeds 23,24,25
-
-Library: extend_job(job_dir, add=N) or extend_job(job_dir, seeds=[...]).
-
-Refuses when no prior batch exists (outputs/ and outputs_archive/ both
-empty). Each call appends to ``extensions.json`` (timestamp, added seeds,
-source).
+Writes new ``seeds/seed_*.todo`` files and appends the action to
+``extensions.json``. Refuses empty jobs so extension always means cumulative
+refinement of an existing run.
 """
 import argparse
 import json
@@ -116,12 +105,9 @@ def extend_job(
 
 
 def main():
-	"""``abtem-run-extend`` console-script entry."""
+	"""Module entry point."""
 	parser = argparse.ArgumentParser(
-		description=(
-			"abtem-run-extend: append more phonon snapshots to an existing "
-			"job dir. Emits new seeds/seed_*.todo with non-overlapping integers."
-		),
+		description="Append non-overlapping seed todos to an existing job."
 	)
 	parser.add_argument(
 		"job_dir",

@@ -1,19 +1,6 @@
-"""
-Logging setup for abtem_run.
+"""Default stdout logging for local abtem_run scripts.
 
-Default behavior (when a CLI entry point calls ``configure_default_logging()``):
-- INFO and above stream to stdout with a bare ``%(message)s`` formatter,
-  matching the historical "everything goes through print()" output that
-  external tooling (test harnesses, log scrapers, etc.) may rely on.
-- Logger is namespaced under ``abtem_run`` so the package can be silenced
-  or re-routed independently of any host application's own logging.
-
-Environment override: ``ABTEM_RUN_LOG=debug`` (or ``warning`` / ``error``)
-raises or lowers the threshold without touching code.
-
-Library callers that want their own routing can either skip
-``configure_default_logging`` entirely (no handlers, no output) or
-configure handlers themselves on ``logging.getLogger("abtem_run")``.
+Set ``ABTEM_RUN_LOG=debug|info|warning|error`` to change verbosity.
 """
 from __future__ import annotations
 

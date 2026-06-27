@@ -3,34 +3,12 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-"""
-Aggregator for the abtem-run worker pipeline.
+"""Aggregate per-seed zarr outputs into versioned job results.
 
-Reads ``<job_dir>/outputs/seed_*_<channel>.zarr`` (written by the worker),
-computes the mean across seeds for each channel, and writes them into a
-versioned, namespaced ``<job_dir>/aggregate/<UTC>_<hash>/{scans,patterns,
-projections}/`` (rediscovered per config hash; force_new starts a fresh dir),
-with a ``seed_counts.json`` provenance sidecar. The projected-potential
-channel (``seed_*_potproj``) means to a phonon-averaged projection preview, so
-it reflects the potentials actually propagated through; setting
-``simulations.emit_static_baseline`` adds a separate static-lattice projection.
-
-Diff and CBED channels also get a matplotlib PNG preview alongside the
-``.tif``/``.zarr``, mirroring the legacy in-process pipeline's
-``plot_diffraction`` / ``plot_cbed`` output so the worker pipeline is the
-single producer of those previews.
-
-Reads per-seed files from ``outputs/`` ∪ ``outputs_archive/`` so a follow-up
-``abtem-run-extend`` batch landing in a fresh ``outputs/`` accumulates into
-the next mean. On completion, moves ``outputs/`` contents into
-``outputs_archive/`` (skipped if ``simulations.test_enabled`` is true).
-
-CLI:
-    abtem-run-aggregate <job_dir>
-
-Library:
-    from abtem_run.aggregate import aggregate_job
-    aggregate_job(job_dir)
+Reads ``outputs/`` plus ``outputs_archive/``, averages each channel across
+seeds, writes scans/patterns/projections under ``aggregate/<UTC>_<hash>/``, and
+records provenance in ``seed_counts.json``. Completed fresh outputs are archived
+unless ``simulations.test_enabled`` is true.
 """
 import argparse
 import datetime
@@ -277,10 +255,7 @@ def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, job_d
 
 def _write_pattern_preview(measurement, cfg, agg_dir: Path, stem: str,
 		kind_label: str, *, figsize: tuple[float, float]) -> None:
-	"""Matplotlib PNG preview for a 2D diffraction-style measurement (averaged
-	plane-wave diffraction or CBED). Mirrors the legacy plot_diffraction /
-	plot_cbed visual style so the worker pipeline produces an equivalent
-	figure."""
+	"""Write a PNG preview for an averaged diffraction-style measurement."""
 	measurement.show(
 		explode=False, power=0.2, units="mrad",
 		figsize=figsize, cbar=True, common_color_scale=True,
@@ -297,43 +272,13 @@ def _write_pattern_preview(measurement, cfg, agg_dir: Path, stem: str,
 
 
 def aggregate_job(job_dir, *, force_new: bool = False) -> None:
-	"""Merge per-seed outputs in a job_dir into a versioned, namespaced
-	aggregate dir ``aggregate/<UTC>_<hash>/``.
-
-	Args:
-		job_dir: path to the job directory
-		           (``gen_*/<phase>_<hkl>_<tilt>/``).
-		force_new: skip rediscovery and always create a fresh version dir.
-
-	Steps:
-		1. Verify no ``seeds/*.todo`` remain (job must be complete).
-		2. Load the job's TOML, build a RunContext.
-		3. Resolve ``aggregate/<UTC>_<hash>/`` — reuse the newest dir matching
-		   the config hash, or make a fresh one (force_new always does).
-		4. Scan detectors -> ``<vdir>/scans/<det>.{tif,zarr}`` + blurs;
-		   ``do_diffraction`` -> ``<vdir>/patterns/diff.*`` + diff.png;
-		   ``do_cbed`` -> ``<vdir>/patterns/cbed.*`` + cbed.png.
-		5. Seed provenance -> ``<vdir>/seed_counts.json`` (atoms-level seed
-		   list + per-channel counts).
-		6. Projection preview(s) -> ``<vdir>/projections/`` (phonon-averaged
-		   ``seed_*_potproj`` mean + optional static baseline) from the cached
-		   ground-state potential.
-		7. Move outputs/ contents into outputs_archive/ unless
-		   ``simulations.test_enabled``, so future abtem-run-extend batches
-		   land in a fresh outputs/ and accumulate into the next mean.
-
-	Raises:
-		FileNotFoundError: neither ``outputs/`` nor ``outputs_archive/`` exists,
-		    or no ``*.toml`` in job_dir.
-		RuntimeError: ``seeds/`` still has ``.todo`` files (workers not done).
-	"""
+	"""Average completed seed outputs into ``aggregate/<UTC>_<hash>/``."""
 	job_dir = Path(job_dir).resolve()
 	out_dir = job_dir / "outputs"
 	archive_dir = job_dir / "outputs_archive"
 	agg_dir = job_dir / "aggregate"
 
-	# A pure re-aggregate against just the archive is legal (no fresh workers
-	# ran since last time), so either dir suffices.
+	# Re-aggregating archived-only jobs is valid.
 	if not out_dir.exists() and not archive_dir.exists():
 		raise FileNotFoundError(
 			f"No outputs/ or outputs_archive/ directory in {job_dir}"
@@ -384,28 +329,13 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 	proj_dir.mkdir(exist_ok=True)
 	_write_projection_previews(out_dir, archive_dir, ctx, cfg, job_dir, proj_dir)
 
-	# 6. Archive the per-seed outputs so future extends can build on them
-	#    (test_enabled keeps outputs/ in place for diagnostics).
+	# Keep diagnostic outputs visible in test mode.
 	if not ctx.test_enabled:
 		_archive_per_seed_outputs(out_dir, archive_dir)
 
 
 def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool = False) -> int:
-	"""Emit cumulative-mean frames at <vdir>/series/n_<k:03d>/ for k in 1..N,
-	where <vdir> = aggregate/<UTC>_<hash>/ (resolved as in aggregate_job). Each
-	n_<k>/ holds the per-channel aggregate over the first k seeds (sorted by
-	seed integer), namespaced scans/ + patterns/, plus its own seed_counts.json
-	— useful for visualising 1/sqrt(N) convergence without re-running multislice.
-
-	n_phonons caps N (default: all available seeds). force_new skips version-dir
-	rediscovery. Returns N emitted. The projection preview (phonon-averaged +
-	optional static baseline) is written ONCE at <vdir>/projections/, over ALL
-	available seeds — the ``n_phonons`` cap applies only to the per-k frames.
-	Does NOT archive outputs/ (read-only over the per-seed data).
-
-	Raises FileNotFoundError / RuntimeError on the same conditions as
-	aggregate_job.
-	"""
+	"""Write cumulative means for the first k seeds under ``series/n_<k>/``."""
 	job_dir = Path(job_dir).resolve()
 	out_dir = job_dir / "outputs"
 	archive_dir = job_dir / "outputs_archive"
@@ -451,8 +381,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 	if n_max < 1:
 		raise ValueError(f"n_phonons must be >= 1, resolved to {n_max}")
 
-	# Projection preview(s) — once, at <vdir>/projections/ (not per-k):
-	# phonon-averaged over ALL seeds + optional static baseline.
+	# Projection preview is written once for all available seeds.
 	proj_dir.mkdir(exist_ok=True)
 	_write_projection_previews(out_dir, archive_dir, ctx, cfg, job_dir, proj_dir)
 
@@ -499,14 +428,10 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 
 
 def main():
-	"""``abtem-run-aggregate`` console-script entry."""
+	"""Module entry point."""
 	configure_default_logging()
 	parser = argparse.ArgumentParser(
-		description=(
-			"abtem-run aggregator: mean per-seed outputs/ ∪ outputs_archive/ "
-			"into aggregate/, emit potential / diff / cbed PNG previews, and "
-			"archive outputs/ -> outputs_archive/ unless simulations.test_enabled."
-		),
+		description="Aggregate one abtem_run job directory."
 	)
 	parser.add_argument("job_dir", help="job directory (gen_*/<phase>_<hkl>_<tilt>/)")
 	args = parser.parse_args()

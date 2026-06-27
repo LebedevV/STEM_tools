@@ -3,25 +3,7 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-"""
-Local source-tree driver for the worker pipeline:
-
-    generate  ->  for each .todo:  run_one_seed  ->  aggregate
-
-This project is normally run directly from a checked-out source tree, not
-through installed console scripts. From the repository root, use::
-
-    python run.py                              # uses ./config.toml
-    python run.py --config my_config.toml
-    python run.py --generate-only              # plan + planning artifacts, no GPU
-    python run.py --resume gen_<UTC>           # finish a partially-run sweep
-
-For parallel execution (slurm, GNU parallel, multiple GPUs), submit the
-lower-level module entry points directly, for example::
-
-    python -m abtem_run.worker <job_dir> <todo_path>
-    python -m abtem_run.aggregate <job_dir>
-"""
+"""Local source-tree driver: generate jobs, run pending seeds, aggregate."""
 
 import argparse
 import logging
@@ -50,35 +32,7 @@ def run_pipeline(
 	force_new: bool = False,
 	show_estimate: bool = True,
 ) -> Path:
-	"""Library entry point for the in-process pipeline.
-
-	Args:
-		config_path: path to the TOML config (absolute or CWD-relative).
-		             Required unless ``resume_dir`` is given; ignored when it is.
-		generate_only: if True, run the generator and stop (no workers, no
-		               aggregator). Cannot be combined with ``resume_dir``.
-		resume_dir: path to an existing ``gen_<UTC>/`` run directory. Skips the
-		            generator, picks up any remaining ``seeds/*.todo``, and
-		            aggregates each job. Idempotent — a safe no-op on a
-		            fully-complete sweep.
-
-	Returns:
-		Path to the run directory (newly generated, or the resumed one).
-
-	Behavior:
-		1. With ``resume_dir``: pick up the existing run directory (skips the
-		   generator). Otherwise: call ``generate_run(config_path)`` — reads
-		   + validates the config and emits the job tree with per-job TOMLs,
-		   planning artifacts (surf.xyz + combined.png), and per-seed .todo
-		   files.
-		2. If ``generate_only``: return.
-		3. For each job dir: iterate ``seeds/*.todo`` in order, calling
-		   ``run_one_seed`` for each. Workers atomically rename
-		   .todo -> .done.
-		4. For each job dir: call ``aggregate_job`` to mean per-seed outputs
-		   into ``aggregate/``. If outputs/ is already archived (a prior
-		   aggregator ran), skip — use ``--aggregate`` to force a rebuild.
-	"""
+	"""Run the serial local pipeline or resume an existing run directory."""
 	# Exactly one of config_path / resume_dir is required.
 	if resume_dir is None:
 		if config_path is None:

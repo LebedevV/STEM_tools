@@ -3,47 +3,11 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-"""
-abTEM cross-compatibility bridge: per-seed zarrs -> single abtem-native
-ensemble Measurement.
+"""Convert per-seed zarrs into abTEM-native ensemble measurements.
 
-Closes the v6_pre9 architecture-intent open item #3 (abTEM multiphonon
-cross-compatibility). The v6 pipeline writes per-seed zarrs
-(``seed_NNNNNN_<channel>.zarr``) for resumability + cumulative-extend
-support; abtem's idiomatic mental model is one ``Measurement`` with an
-ensemble axis labelled ``FrozenPhononsAxis``. This module spans the two
-worlds without changing the worker pipeline's on-disk format.
-
-Two entry points:
-
-  abtem-run-to-ensemble <job_dir> [--channel CH ...] [--out PATH]
-      CLI. For each channel (auto-discovered if not specified), reads
-      every ``seed_*_<channel>.zarr`` from outputs/ ∪ outputs_archive/
-      and writes ``<vdir>/ensemble/<channel>_ensemble.zarr`` carrying the
-      full N-snapshot stack with proper FrozenPhononsAxis metadata.
-      Round-trip safe: ``abtem.from_zarr`` on the result restores the
-      ensemble axis, and ``.reduce_ensemble()`` averages back to the
-      same value as the regular aggregator.
-
-  load_ensemble(job_dir, channel) -> abtem Measurement | None
-      Library. Same logic in-memory; returns the stacked Measurement
-      or None when no per-seed zarrs exist for that channel.
-
-The ``FrozenPhononsAxis`` carries ``_ensemble_mean=True`` so abtem's
-``.reduce_ensemble()`` does the thermal average automatically. The
-result mathematically matches ``<vdir>/scans/<channel>.zarr`` (the
-filesystem-glob mean) to floating-point precision — verified by the
-``test_to_ensemble_reduce_matches_aggregate`` test.
-
-Limitations:
-  - Channels are stacked one at a time (one zarr per channel). abtem
-    supports a ComputableList in one zarr, but that's overhead our
-    consumers don't need.
-  - The ensemble axis carries no per-seed metadata beyond order. The
-    integer seed values used to produce each snapshot are encoded in
-    the source filenames, not in the ensemble; if you need that
-    provenance, glob ``outputs_archive/seed_*_<channel>.zarr`` yourself
-    and read the seed integer from the filename.
+Each channel becomes one ``*_ensemble.zarr`` with a ``FrozenPhononsAxis``.
+Calling ``.reduce_ensemble()`` on that measurement gives the same thermal mean
+as the regular aggregator.
 """
 import argparse
 import sys
@@ -214,15 +178,9 @@ def to_ensemble_files(
 
 
 def main():
-	"""``abtem-run-to-ensemble`` console-script entry."""
+	"""Module entry point."""
 	parser = argparse.ArgumentParser(
-		description=(
-			"abtem-run-to-ensemble: convert the per-seed zarrs in a job dir "
-			"into abtem-native ensemble Measurement zarrs. Writes "
-			"<out_dir>/<channel>_ensemble.zarr per channel; the file "
-			"round-trips through abtem.from_zarr and supports "
-			".reduce_ensemble() for thermal averaging."
-		),
+		description="Convert per-seed zarrs into abTEM ensemble zarrs."
 	)
 	parser.add_argument(
 		"job_dir",

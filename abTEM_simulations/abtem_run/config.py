@@ -3,8 +3,7 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-# This code is only for reading and validating the config.toml
-# Need to be edited only if new variables are added or config file is split
+# TOML schema and validation.
 
 from pathlib import Path
 from typing import Any, Literal
@@ -227,10 +226,8 @@ class Simulations(BaseModel):
 
 class Microscope(BaseModel):
 	HT_value: int | list[int ] = Field()
-	# Plane-wave diffraction pattern, per seed. Optional extra output; off by default.
 	do_diffraction: bool = Field(default=False)
-	# Convergent-beam diffraction via Probe.multislice at one position. Split
-	# out of do_diffraction in the worker era so they gate independently.
+	# Convergent-beam diffraction at one probe position.
 	do_cbed: bool = Field(default=False)
 	# Which detectors to compute in probe.scan; subset of {haadf, abf, bf}.
 	# Default all three.
