@@ -228,7 +228,7 @@ def _load_or_build_static_potential(job_dir: Path, cfg):
 	return pot
 
 
-def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, job_dir: Path, target_dir: Path) -> None:
+def _write_projection_previews(out_dir: Path, archive_dir: Path, cfg, job_dir: Path, target_dir: Path) -> None:
 	"""Phonon-averaged projection at ``target_dir/potential_projection.*``,
 	plus a static-lattice one at ``..._static.*`` if ``emit_static_baseline``.
 	No-op if neither applies. The ground-state Potential is loaded (or built
@@ -241,7 +241,7 @@ def _write_projection_previews(out_dir: Path, archive_dir: Path, ctx, cfg, job_d
 		return
 
 	static_potential = _load_or_build_static_potential(job_dir, cfg)
-	probe = add_probe(ctx, static_potential)
+	probe = add_probe(cfg, static_potential)
 
 	if mean_proj is not None:
 		_write_projection(mean_proj, probe, cfg, target_dir,
@@ -303,20 +303,20 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 
 	seed_counts: dict[str, int] = {}
 	# 1. Scan channels (with blurs) -> scans/
-	if ctx.do_full_run:
+	if cfg.simulations.do_full_run:
 		scans_dir.mkdir(exist_ok=True)
-		for det_name in ctx.detectors:
+		for det_name in cfg.microscope.detectors:
 			_, seed_counts[det_name] = _emit_channel(out_dir, archive_dir, scans_dir, det_name,
-				with_blurs=True, blur_sigmas=ctx.blur_sigmas, blur_boundary=ctx.blur_boundary)
+				with_blurs=True, blur_sigmas=cfg.simulations.blur_sigmas, blur_boundary=cfg.simulations.blur_boundary)
 
 	# 2/3. Plane-wave diffraction + CBED -> patterns/ (+ PNG previews)
-	if ctx.do_diffraction or ctx.do_cbed:
+	if cfg.microscope.do_diffraction or cfg.microscope.do_cbed:
 		patterns_dir.mkdir(exist_ok=True)
-	if ctx.do_diffraction:
+	if cfg.microscope.do_diffraction:
 		diff_mean, seed_counts["diff"] = _emit_channel(out_dir, archive_dir, patterns_dir, "diff", with_blurs=False)
 		if diff_mean is not None:
 			_write_pattern_preview(diff_mean, cfg, patterns_dir, "diff", "diffraction", figsize=(10, 6))
-	if ctx.do_cbed:
+	if cfg.microscope.do_cbed:
 		cbed_mean, seed_counts["cbed"] = _emit_channel(out_dir, archive_dir, patterns_dir, "cbed", with_blurs=False)
 		if cbed_mean is not None:
 			_write_pattern_preview(cbed_mean, cfg, patterns_dir, "cbed", "CBED", figsize=(8, 6))
@@ -327,10 +327,10 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 
 	# 5. Projection preview(s) -> projections/: phonon-averaged + optional static.
 	proj_dir.mkdir(exist_ok=True)
-	_write_projection_previews(out_dir, archive_dir, ctx, cfg, job_dir, proj_dir)
+	_write_projection_previews(out_dir, archive_dir, cfg, job_dir, proj_dir)
 
 	# Keep diagnostic outputs visible in test mode.
-	if not ctx.test_enabled:
+	if not cfg.simulations.test_enabled:
 		_archive_per_seed_outputs(out_dir, archive_dir)
 
 
@@ -361,11 +361,11 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 	# Total seeds from the first channel that has any zarrs (scan detectors
 	# first, then diff, then cbed).
 	probe_channels: list[str] = []
-	if ctx.do_full_run:
-		probe_channels.extend(ctx.detectors)
-	if ctx.do_diffraction:
+	if cfg.simulations.do_full_run:
+		probe_channels.extend(cfg.microscope.detectors)
+	if cfg.microscope.do_diffraction:
 		probe_channels.append("diff")
-	if ctx.do_cbed:
+	if cfg.microscope.do_cbed:
 		probe_channels.append("cbed")
 	total_seeds = 0
 	for ch in probe_channels:
@@ -383,7 +383,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 
 	# Projection preview is written once for all available seeds.
 	proj_dir.mkdir(exist_ok=True)
-	_write_projection_previews(out_dir, archive_dir, ctx, cfg, job_dir, proj_dir)
+	_write_projection_previews(out_dir, archive_dir, cfg, job_dir, proj_dir)
 
 	# Per-k cumulative-mean frames at <vdir>/series/n_<k>/.
 	series_dir = vdir / "series"
@@ -392,17 +392,17 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 		k_scans = k_dir / "scans"
 		k_patterns = k_dir / "patterns"
 		seed_counts: dict[str, int] = {}
-		if ctx.do_full_run:
+		if cfg.simulations.do_full_run:
 			k_scans.mkdir(parents=True, exist_ok=True)
-			for det_name in ctx.detectors:
+			for det_name in cfg.microscope.detectors:
 				_, seed_counts[det_name] = _emit_channel(
 					out_dir, archive_dir, k_scans, det_name,
-					with_blurs=True, blur_sigmas=ctx.blur_sigmas,
-					blur_boundary=ctx.blur_boundary, max_seeds=k,
+					with_blurs=True, blur_sigmas=cfg.simulations.blur_sigmas,
+					blur_boundary=cfg.simulations.blur_boundary, max_seeds=k,
 				)
-		if ctx.do_diffraction or ctx.do_cbed:
+		if cfg.microscope.do_diffraction or cfg.microscope.do_cbed:
 			k_patterns.mkdir(parents=True, exist_ok=True)
-		if ctx.do_diffraction:
+		if cfg.microscope.do_diffraction:
 			diff_mean, seed_counts["diff"] = _emit_channel(
 				out_dir, archive_dir, k_patterns, "diff",
 				with_blurs=False, max_seeds=k,
@@ -411,7 +411,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 				_write_pattern_preview(
 					diff_mean, cfg, k_patterns, "diff", "diffraction", figsize=(10, 6),
 				)
-		if ctx.do_cbed:
+		if cfg.microscope.do_cbed:
 			cbed_mean, seed_counts["cbed"] = _emit_channel(
 				out_dir, archive_dir, k_patterns, "cbed",
 				with_blurs=False, max_seeds=k,

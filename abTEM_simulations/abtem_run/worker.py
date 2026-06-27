@@ -102,7 +102,7 @@ def _displaced_atoms(atoms, sigmas, seed: int):
 	return fph.to_atoms_ensemble().trajectory[0]
 
 
-def run_scan(ctx, potential, detector_objs):
+def run_scan(cfg, ctx, potential, detector_objs):
 	"""Probe.scan over the lamella with the requested detectors.
 
 	Returns a list ``[per-detector measurement]`` in the same order as
@@ -110,8 +110,8 @@ def run_scan(ctx, potential, detector_objs):
 	a single ensemble there, not a 1-element list).
 	"""
 	# Probe and scan construction is shared with projection previews.
-	probe = add_probe(ctx, potential)
-	scan = add_scan(ctx, probe, potential)
+	probe = add_probe(cfg, potential)
+	scan = add_scan(cfg, ctx, probe, potential)
 
 	raw = probe.scan(potential, scan=scan, detectors=detector_objs).compute()
 	if len(detector_objs) == 1:
@@ -119,12 +119,12 @@ def run_scan(ctx, potential, detector_objs):
 	return list(raw)
 
 
-def run_diffraction(ctx, potential):
+def run_diffraction(cfg, potential):
 	"""Plane-wave multislice → diffraction patterns. Returns a CPU-side
 	per-snapshot pattern (no ensemble averaging — that's the aggregator's
 	job, since this worker handles a single seed)."""
 	# CPU-side multislice first, then fallback to the potential's native device.
-	pw = abtem.PlaneWave(energy=ctx.HT_value, device="cpu")
+	pw = abtem.PlaneWave(energy=cfg.microscope.HT_value, device="cpu")
 	try:
 		exit_waves = pw.multislice(potential.to_cpu()).compute()
 	except Exception:
@@ -134,9 +134,9 @@ def run_diffraction(ctx, potential):
 	).compute().to_cpu()
 
 
-def run_cbed(ctx, potential):
+def run_cbed(cfg, ctx, potential):
 	"""Probe-at-center CBED. Returns a CPU-side per-snapshot pattern."""
-	probe = add_probe(ctx, potential)
+	probe = add_probe(cfg, potential)
 
 	center = np.array([[
 		0.5 * (ctx.scan_start[0] + ctx.scan_stop[0]),
@@ -148,7 +148,7 @@ def run_cbed(ctx, potential):
 	except Exception:
 		exit_waves = probe.multislice(potential, scan=center).compute()
 	cbed = exit_waves.diffraction_patterns(
-		max_angle=ctx.cbed_max_angle, block_direct=False
+		max_angle=cfg.microscope.cbed_max_angle, block_direct=False
 	)
 	if cbed.ensemble_dims > 0:
 		cbed = cbed.reduce_ensemble()
@@ -215,7 +215,7 @@ def run_one_seed(job_dir, todo_path) -> None:
 			displaced = _displaced_atoms(lamella, ctx.fph_sigma, seed)
 
 			# Test mode leaves the displacement inspectable even if multislice fails.
-			if ctx.test_enabled:
+			if cfg.simulations.test_enabled:
 				ase.io.write(
 					str(out_dir / f"seed_{seed:06d}_displaced.xyz"),
 					displaced,
@@ -229,25 +229,25 @@ def run_one_seed(job_dir, todo_path) -> None:
 			proj.to_tiff(str(out_dir / f"seed_{seed:06d}_potproj.tif"))
 			proj.to_zarr(str(out_dir / f"seed_{seed:06d}_potproj.zarr"), overwrite=True)
 
-			if ctx.do_diffraction:
-				diff = run_diffraction(ctx, potential)
+			if cfg.microscope.do_diffraction:
+				diff = run_diffraction(cfg, potential)
 				diff.to_tiff(str(out_dir / f"seed_{seed:06d}_diff.tif"))
 				diff.to_zarr(str(out_dir / f"seed_{seed:06d}_diff.zarr"), overwrite=True)
 
-			if ctx.do_cbed:
-				cbed = run_cbed(ctx, potential)
+			if cfg.microscope.do_cbed:
+				cbed = run_cbed(cfg, ctx, potential)
 				cbed.to_tiff(str(out_dir / f"seed_{seed:06d}_cbed.tif"))
 				cbed.to_zarr(str(out_dir / f"seed_{seed:06d}_cbed.zarr"), overwrite=True)
 
-			if ctx.do_full_run and ctx.detectors:
+			if cfg.simulations.do_full_run and cfg.microscope.detectors:
 				detectors_by_name = {
 					"haadf": ctx.haadf_detector,
 					"abf": ctx.abf_detector,
 					"bf": ctx.bf_detector,
 				}
-				detector_objs = [detectors_by_name[n] for n in ctx.detectors]
-				measurements = run_scan(ctx, potential, detector_objs)
-				for det_name, m in zip(ctx.detectors, measurements):
+				detector_objs = [detectors_by_name[n] for n in cfg.microscope.detectors]
+				measurements = run_scan(cfg, ctx, potential, detector_objs)
+				for det_name, m in zip(cfg.microscope.detectors, measurements):
 					cpu = m.copy().to_cpu()
 					cpu.to_tiff(str(out_dir / f"seed_{seed:06d}_{det_name}.tif"))
 					cpu.to_zarr(str(out_dir / f"seed_{seed:06d}_{det_name}.zarr"), overwrite=True)

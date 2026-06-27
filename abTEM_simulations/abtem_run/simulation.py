@@ -492,39 +492,33 @@ def _resolve_defocus(defocus, c30, energy):
 	return float(scherzer_defocus(float(c30), float(energy)))
 
 
-def add_probe(ctx, potential, defocus=None):
-	"""Build an abtem.Probe from ctx and match its grid to ``potential``.
-
-	``defocus`` (float, ``'scherzer'``, or None=use ctx.defocus) overrides
-	ctx.defocus for this probe. Warns if the resolved defocus is
-	``'scherzer'`` with C30=0 — the formula evaluates to 0, giving an
-	in-focus probe (the "BF looks like DF" artifact).
-	"""
-	aberrations = dict(ctx.aberrations)
+def add_probe(cfg, potential, defocus=None):
+	"""Build an abtem.Probe from cfg and match its grid to ``potential``."""
+	aberrations = dict(cfg.microscope.aberrations)
 	c30 = float(aberrations.get("C30", 0.0))
-	defocus_in = defocus if defocus is not None else ctx.defocus
+	defocus_in = defocus if defocus is not None else cfg.microscope.defocus
 	if isinstance(defocus_in, str) and defocus_in.lower() == "scherzer" and c30 == 0.0:
 		warnings.warn(
 			"defocus='scherzer' is a no-op with aberrations.C30=0; "
 			"set C30 to a non-zero Å value or pass a numeric defocus.",
 			stacklevel=2,
 		)
-	aberrations["defocus"] = _resolve_defocus(defocus_in, c30, ctx.HT_value)
+	aberrations["defocus"] = _resolve_defocus(defocus_in, c30, cfg.microscope.HT_value)
 	probe = abtem.Probe(
-		energy=ctx.HT_value,
-		semiangle_cutoff=ctx.convergence_angle,
+		energy=cfg.microscope.HT_value,
+		semiangle_cutoff=cfg.microscope.convergence_angle,
 		aberrations=aberrations,
 	)
 	probe.grid.match(potential)
 	return probe
 
-def add_scan(ctx, probe, pot):
+def add_scan(cfg, ctx, probe, pot):
 	default_sampling = probe.ctf.nyquist_sampling * .9
 	log.info(f"Proposed sampling {default_sampling}")
-	if not ctx.override_sampling:
+	if not cfg.simulations.override_sampling:
 		sampling = default_sampling
 	else:
-		sampling = ctx.override_sampling
+		sampling = cfg.simulations.override_sampling
 		log.info(f"Overrided sampling {sampling}")
 	return abtem.scan.GridScan(
 		start=ctx.scan_start,
