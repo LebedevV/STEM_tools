@@ -7,6 +7,7 @@ __license__ = "GPL-v3"
 
 import argparse
 import os
+from pathlib import Path
 import tomllib
 
 import matplotlib.pyplot as plt
@@ -345,9 +346,31 @@ def _apply_overrides(data, sets):
     return data
 
 
+def _folder_slash(path):
+    return os.path.join(str(path), "")
+
+
+def _apply_cli_paths(data, args):
+    if args.frame is not None:
+        frame = Path(args.frame)
+        data.setdefault("io", {})["folder"] = _folder_slash(frame.parent)
+        data["io"]["fname"] = frame_stem(frame.name)
+    if args.folder is not None:
+        data.setdefault("io", {})["folder"] = _folder_slash(args.folder)
+    if args.fname is not None:
+        data.setdefault("io", {})["fname"] = frame_stem(args.fname)
+    if args.toml_path is not None:
+        data.setdefault("calibration", {})["toml_path"] = str(args.toml_path)
+    return data
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="config-driven vector_maps refinement runner")
     ap.add_argument("--config", required=True)
+    ap.add_argument("--frame", default=None, help="frame TIFF path; sets io.folder and io.fname")
+    ap.add_argument("--folder", default=None, help="override io.folder")
+    ap.add_argument("--fname", default=None, help="override io.fname; TIFF suffix is stripped safely")
+    ap.add_argument("--toml-path", default=None, help="override calibration.toml_path")
     ap.add_argument("--set", action="append", default=[], metavar="k=v")
     ap.add_argument("--calib", type=float, default=None)
     ap.add_argument("--no-gui", dest="gui", action="store_false", default=None)
@@ -360,6 +383,7 @@ def main(argv=None):
         raise SystemExit(f"{args.config} is a batch sweep config; "
                          f"run: python vmap_sweep.py --config {args.config}")
     _apply_overrides(data, args.set)
+    _apply_cli_paths(data, args)
     cfg = AppConfig.model_validate(data)
 
     run(cfg, gui=args.gui, refine=args.refine, calib=args.calib)
