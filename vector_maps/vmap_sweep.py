@@ -15,7 +15,6 @@ import tomllib
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from vmap_config import AppConfig, load_batch
@@ -71,7 +70,7 @@ def _run_row(row, fit_cfg_path, retries):
     for _ in range(max(1, retries)):
         #try:
         if 1:
-            lat, motif, _extra, meta = vmap_run.run(cfg, gui=False)
+            lat, motif, _extra, meta = vmap_run.run(cfg, gui=None)
             return lat, motif, meta, nominal
         #except Exception as exc:
         #    last = exc

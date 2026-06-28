@@ -23,7 +23,7 @@ use   = true
 [[motif]]
 label = "B_1"
 el    = "Zr"
-coord = [0.0, 0.5]
+coord = [0.5, 0.0]
 fit   = [true, true]
 use   = false
 
