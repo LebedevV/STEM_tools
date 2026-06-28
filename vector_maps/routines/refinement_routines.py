@@ -574,8 +574,8 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 		dx, dy = ab_shift_vector(lat_params, motif, extra_pars, shift_ab)
 		lat_params['base'] = [lat_params['base'][0] + dx, lat_params['base'][1] + dy, lat_params['base'][2]]
 
-	ij_cr, th_relevant, observed_xy, _, _ = preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,recall_zero=False,
-							max_dist=max_dist,sub_area=sub_area) #This one for a preview; no need to load the dataframe
+	ij_cr, th_relevant, observed_xy, _, _ = preprocess_dataset(lat_params,motif,extra_pars,dataset,calib,
+							recall_zero=recall_zero,max_dist=max_dist,sub_area=sub_area) #This one for a preview; no need to load the dataframe
 	
 
 
