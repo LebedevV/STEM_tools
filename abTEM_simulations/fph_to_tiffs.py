@@ -21,6 +21,7 @@ measurement's real-space units (abtem `gaussian_filter` converts to pixels via t
 measurement's own sampling); with a toml they default to simulations.blur_sigmas /
 blur_boundary. Place this file where `abtem_run` is importable (e.g. next to run.py).
 """
+import tomllib
 import warnings
 from pathlib import Path
 
@@ -29,7 +30,18 @@ import numpy as np
 import abtem
 
 from abtem_run.compat import apply_abtem_patches
-from abtem_run.config import load_config
+
+
+def _read_simulation_toml_fields(toml_path):
+    """Read only the [simulations] keys needed here, without validating a full job config."""
+    with open(toml_path, "rb") as f:
+        data = tomllib.load(f)
+    sims = data.get("simulations", {})
+    return (
+        sims.get("blur_sigmas"),
+        sims.get("blur_boundary"),
+        sims.get("frozen_phonons"),
+    )
 
 
 def ensemble_mean(measurement):
@@ -59,6 +71,17 @@ def ensemble_mean(measurement):
     return mean, n_configs
 
 
+
+
+def _resolve_abtem_zarr_path(zarr_path):
+    """Return the abTEM-readable zarr node for root or array0-based stores."""
+    zarr_path = Path(zarr_path)
+    array0 = zarr_path / "array0"
+    if (array0 / "zarr.json").exists():
+        return array0
+    return zarr_path
+
+
 def fph_zarr_to_tiffs(
     zarr_path,
     toml_path=None,
@@ -79,13 +102,13 @@ def fph_zarr_to_tiffs(
 
     expected_configs = None
     if toml_path is not None:
-        sims = load_config(toml_path).simulations
+        toml_sizes, toml_boundary, toml_frozen_phonons = _read_simulation_toml_fields(toml_path)
         if source_sizes is None:
-            source_sizes = sims.blur_sigmas
+            source_sizes = toml_sizes
         if boundary is None:
-            boundary = sims.blur_boundary
+            boundary = toml_boundary
         try:
-            expected_configs = int(sims.frozen_phonons)
+            expected_configs = int(toml_frozen_phonons)
         except (TypeError, ValueError):
             expected_configs = None  # 'None' / disabled -> nothing to cross-check
     boundary = boundary or "nearest"
@@ -96,7 +119,10 @@ def fph_zarr_to_tiffs(
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = zarr_path.stem
 
-    measurement = abtem.from_zarr(str(zarr_path))
+    read_path = _resolve_abtem_zarr_path(zarr_path)
+    if read_path != zarr_path:
+        print(f"fph_to_tiffs: reading zarr array from {read_path}")
+    measurement = abtem.from_zarr(str(read_path))
     mean, n_configs = ensemble_mean(measurement)
     print(f"fph_to_tiffs: {zarr_path.name}: averaged {n_configs} frozen-phonon config(s)")
     if expected_configs is not None and n_configs != expected_configs:
@@ -114,8 +140,8 @@ def fph_zarr_to_tiffs(
 
     written = [out_dir / f"{stem}.tif"]
     mean.to_tiff(str(written[0]))
-    if save_zarr:
-        mean.to_zarr(str(out_dir / f"{stem}_mean.zarr"), overwrite=True)
+    #if save_zarr:
+    #    mean.to_zarr(str(out_dir / f"{stem}_mean.zarr"), overwrite=True)
 
     for size in source_sizes:
         tag = str(size).replace(".", "-")  # filesystem-friendly, matches abtem_run
