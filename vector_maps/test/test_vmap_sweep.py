@@ -32,3 +32,13 @@ def test_run_row_calibrates_from_manifest_scan_s(monkeypatch):
 	vmap_sweep._run_row({"tiff_path": "/d/Pm3m_(0.0, 0.0)_110_haadf.tif", "scan_s": 50.0}, TMPL, 1)
 	assert captured["cal"]["source"] == "frame_size"
 	assert captured["cal"]["frame_size"] == 50.0 and captured["cal"]["toml_path"] is None
+
+def test_run_row_uses_frame_stem_for_decimal_names(monkeypatch):
+	# Decimal points inside the frame name are part of the simulation stem, not extensions.
+	captured = {}
+	def fake_run(cfg, gui=False):
+		captured["fname"] = cfg.io.fname
+		return {"abg": [0.4, 0.4, 90.0]}, {}, {}, {}
+	monkeypatch.setattr(vmap_sweep.vmap_run, "run", fake_run)
+	vmap_sweep._run_row({"tiff_path": "/d/fph_Pm3m_(25.0, 10.0)_110_haadf_0-25.tif", "scan_s": 50.0}, TMPL, 1)
+	assert captured["fname"] == "fph_Pm3m_(25.0, 10.0)_110_haadf_0-25"

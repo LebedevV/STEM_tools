@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 
 from vmap_config import AppConfig, load_batch
 from vmap_manifest import build_manifest
+from routines.routines import frame_stem
 import vmap_run
 
 
@@ -39,7 +40,7 @@ def _select(df, flt):
 
 def _run_row(row, fit_cfg_path, retries):
     folder = os.path.join(os.path.dirname(str(row["tiff_path"])), "")
-    stem = os.path.splitext(os.path.basename(str(row["tiff_path"])))[0]
+    stem = frame_stem(row["tiff_path"])
     with open(fit_cfg_path, "rb") as f:
         data = tomllib.load(f)
     data.setdefault("io", {})["folder"] = folder
