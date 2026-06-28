@@ -381,11 +381,21 @@ def plot_output_page(fname,folder,full_df=None):
 
 		img_x = pd.to_numeric(stats0.get("img_x", np.nan), errors="coerce")
 		pix_x = pd.to_numeric(stats0.get("pix_x", np.nan), errors="coerce")
+		img_y = pd.to_numeric(stats0.get("img_y", np.nan), errors="coerce")
+		pix_y = pd.to_numeric(stats0.get("pix_y", np.nan), errors="coerce")
 
-		calib = img_x / pix_x * 1000 if pd.notna(img_x) and pd.notna(pix_x) and pix_x != 0 else np.nan
+		calib_x = img_x / pix_x * 1000 if pd.notna(img_x) and pd.notna(pix_x) and pix_x != 0 else np.nan
+		calib_y = img_y / pix_y * 1000 if pd.notna(img_y) and pd.notna(pix_y) and pix_y != 0 else np.nan
+		calib = calib_x
 
-		if pd.notna(calib):
-			txt_label += f"Pixel size = {calib:.2g} pm/px\n"
+		if pd.notna(calib) and np.isfinite(calib) and 0 < calib <= 1e4:
+			txt_label += f"Pixel size = {calib:.2f} pm/px\n"
+		elif pd.notna(calib):
+			txt_label += "Pixel size = invalid stats\n"
+
+		if (pd.notna(calib_x) and pd.notna(calib_y) and np.isfinite(calib_x)
+				and np.isfinite(calib_y) and not np.isclose(calib_x, calib_y, rtol=1e-3)):
+			txt_label += "Pixel size anisotropic stats\n"
 
 	# -------------------------
 	# per-dataset stats

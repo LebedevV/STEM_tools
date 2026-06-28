@@ -486,7 +486,7 @@ def redetect_from_lattice(folder, fname, calib, lat_params, motif, extra_pars, i
 	seed_path = folder + stem + out_suffix + "_seed.csv"
 	pd.DataFrame({"x_obs0": seed_px[:, 0], "y_obs0": seed_px[:, 1]}).to_csv(seed_path, index=False)
 	print(f"redetect_from_lattice: wrote {len(seed_px)} full-grid seeds -> {seed_path}")
-	detect_columns(fname=fname, folder=folder, imsize=(int(W), int(H)), sep=10,
+	detect_columns(fname=fname, folder=folder, imsize=(W * calib, H * calib), sep=10,
 		       start_csv=seed_path, interactive=False, ptonn=ptonn, out_suffix=out_suffix)
 	return folder + stem + out_suffix + "_xyI.csv"
 
@@ -523,7 +523,7 @@ def _redetect_scratch(image, folder, fname, calib, out_suffix="_scratch"):
 
 	def _detect(evt):
 		pca, sub = chk.get_status()
-		detect_columns(fname=fname, folder=folder, imsize=(int(W), int(H)),
+		detect_columns(fname=fname, folder=folder, imsize=(W * calib, H * calib),
 			       sep=int(s_sep.val), sigma1=s_sig.val, thr=s_thr.val, pca=pca,
 			       subtract_background=sub, ptonn=0.6, interactive=False, out_suffix=out_suffix)
 		df = pd.read_csv(folder + stem + out_suffix + "_xyI.csv")
@@ -705,7 +705,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 			xy = new_obs[["x_obs0", "y_obs0"]].to_numpy(float)
 			if _review_obs(_im, xy, calib, "redetect (lattice seed) -- accept overwrites the obs"):
 				dataset = new_obs
-				new_obs.to_csv(os.path.join(folder, os.path.splitext(fname)[0] + "_xyI.csv"), index=False)
+				new_obs.to_csv(os.path.join(folder, frame_stem(fname) + "_xyI.csv"), index=False)
 				sc_obs.set_offsets(xy * calib)
 				update()
 
@@ -720,7 +720,7 @@ def refinement_run(folder,sf,fname,calib,lat_params,motif,extra_pars=None,recall
 			new_obs = _redetect_scratch(_im, folder, fname, calib)
 			if new_obs is not None:
 				dataset = new_obs
-				new_obs.to_csv(os.path.join(folder, os.path.splitext(fname)[0] + "_xyI.csv"), index=False)
+				new_obs.to_csv(os.path.join(folder, frame_stem(fname) + "_xyI.csv"), index=False)
 				sc_obs.set_offsets(new_obs[["x_obs0", "y_obs0"]].to_numpy(float) * calib)
 				update()
 

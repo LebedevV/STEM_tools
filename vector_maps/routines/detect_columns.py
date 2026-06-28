@@ -54,8 +54,17 @@ def detect_columns(
 	metadata['fname'] = fname
 	metadata['imsize'] = imsize
 	imsize_px = (s.axes_manager[0].size,s.axes_manager[1].size)
-	#xy directions not checked! has to be verified
+	# imsize is the physical field of view in nm, not a pixel count.
+	# Pixel size is intentionally not stored redundantly: panels derive it from
+	# img_x / pix_x (and can cross-check y when present).
 	d0,d1 = imsize[0]/imsize_px[0],imsize[1]/imsize_px[1]
+	if not (np.isfinite(d0) and np.isfinite(d1) and d0 > 0 and d1 > 0):
+		raise ValueError(f'invalid detect_columns pixel size from imsize={imsize!r}, pixels={imsize_px!r}')
+	if max(d0, d1) * 1000 > 1e4:
+		raise ValueError(
+			f'unrealistic detect_columns pixel size {d0 * 1000:.3g}, {d1 * 1000:.3g} pm/px; '
+			f'check imsize/calibration for {fname}'
+		)
 	print(d0,d1)
 	#Flaw!!! atomap apparently does not support non-sqare pixels!
 
@@ -70,7 +79,9 @@ def detect_columns(
 
 
 	full_stats['img_x'] = imsize[0]
+	full_stats['img_y'] = imsize[1]
 	full_stats['pix_x'] = s.axes_manager[0].size
+	full_stats['pix_y'] = s.axes_manager[1].size
 
 	s1 = s.copy()
 	s1.map(scipy.ndimage.gaussian_filter, sigma=sigma1)
