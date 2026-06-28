@@ -9,6 +9,7 @@ import argparse
 import os
 import tomllib
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 from routines.routines import *
@@ -319,7 +320,9 @@ def run(cfg: AppConfig, *, gui=None, refine=None, calib=None):
         from routines.unit_cell_average import unit_cell_average_to_tiffs
         unit_cell_average_to_tiffs(os.path.join(folder, fname), lat_params, cal, motif)
 
-    return lat_params, motif, extra_pars, meta
+    out = lat_params, motif, extra_pars, meta
+    plt.close('all')
+    return out
 
 
 # ---- CLI -------------------------------------------------------------------
