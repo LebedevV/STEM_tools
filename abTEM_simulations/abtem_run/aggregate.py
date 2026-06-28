@@ -23,6 +23,7 @@ import abtem
 import matplotlib.pyplot as plt
 
 from ._log import configure_default_logging
+from .compat import warn_if_unpatched
 from .job_io import collect_seed_zarrs, contributing_seeds, load_job_config
 from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, load_ground_state_atoms
@@ -419,6 +420,7 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 def main():
 	"""Module entry point."""
 	configure_default_logging()
+	warn_if_unpatched()
 	parser = argparse.ArgumentParser(
 		description="Aggregate one abtem_run job directory."
 	)

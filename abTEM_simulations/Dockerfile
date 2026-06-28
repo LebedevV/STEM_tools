@@ -57,11 +57,14 @@ RUN python3.11 -m pip install --no-cache-dir ".[gpu-cu13]"
 # lets the import succeed without the cuda-bindings package (applies at runtime too).
 ENV NUMBA_CUDA_USE_NVIDIA_BINDING=0
 
-# Bake the abtem_run compat shims into abTEM's installed source so every process
-# in the image gets a correct abTEM with no runtime shimming, and FAIL the build
-# if any shim did not bind (a drifted abtem would otherwise fail only at runtime
-# on a spot node). Patching only rewrites source, so this needs no GPU.
-RUN python3.11 -c "from abtem_run.compat import patch_abtem_source; import sys; r = patch_abtem_source(); sys.exit(0 if r and all(r.values()) else 1)"
+# Bake the abtem_run compat shims into abTEM's installed source so every process in
+# the image gets a correct abTEM with no runtime shimming. Patching only rewrites
+# source, so this needs no GPU.
+RUN python3.11 -c "from abtem_run.compat import patch_abtem_source; patch_abtem_source()"
+# FAIL the build if a needed behavior is still missing. A fresh process (no stale
+# linecache) asserts the end state -- nothing left to patch -- so it passes whether we
+# patched it or a future abTEM already ships the fix; the abtem==1.0.9 pin guards drift.
+RUN python3.11 -c "from abtem_run.compat import detect_applicable_patches; import sys; sys.exit(0 if not detect_applicable_patches() else 1)"
 
 # Caches default to $HOME; with `docker run --user <uid>` (no matching passwd
 # entry) HOME resolves to '/', which arbitrary users can't write -> cupy / numba /

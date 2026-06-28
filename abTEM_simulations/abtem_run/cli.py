@@ -205,7 +205,9 @@ def main():
 	if args.n_phonons is not None and args.aggregate_series is None:
 		parser.error("--n-phonons only applies to --aggregate-series")
 
-	ensure_patched_environment(assume_yes=_resolve_patch_consent(args))
+	# planning-only (--generate-only) does no multislice/blur, so it needs no shims
+	if not args.generate_only:
+		ensure_patched_environment(assume_yes=_resolve_patch_consent(args))
 
 	if args.aggregate is not None:
 		aggregate_job(args.aggregate, force_new=args.force_new)

@@ -28,6 +28,7 @@ Applied status is recorded in _PATCHES_APPLIED for diagnostics.
 import importlib
 import inspect
 import logging
+import os
 import sys
 import textwrap
 import warnings
@@ -185,7 +186,10 @@ def patch_abtem_source() -> dict[str, bool]:
 		)
 		file_lines = Path(path).read_text().splitlines(keepends=True)
 		file_lines[start - 1 : start - 1 + len(lines)] = [patched_block]
-		Path(path).write_text("".join(file_lines))
+		# atomic: a failed write must not leave abTEM's installed source half-written
+		tmp = Path(f"{path}.tmp")
+		tmp.write_text("".join(file_lines))
+		os.replace(tmp, path)
 		results[spec["name"]] = True
 	return results
 
@@ -195,31 +199,39 @@ def ensure_patched_environment(assume_yes: bool | None = None) -> None:
 
 	No-op when the current abTEM already has the behaviors. Otherwise:
 	  * assume_yes=True  -> apply (--apply-patches / ABTEM_RUN_APPLY_PATCHES)
-	  * assume_yes=False -> run against the bare environment, with a warning
-	  * assume_yes=None  -> ask on a TTY; on a non-TTY, fail fast with guidance
+	  * assume_yes=False -> run against the bare environment, with a warning (--no-patches)
+	  * assume_yes=None  -> ask on a TTY (declining aborts the run); non-TTY fails fast
 	"""
 	applicable = detect_applicable_patches()
 	if not applicable:
 		return
 	missing = "; ".join(_REASONS[name] for name in applicable)
+	# These shims only enable code paths (GPU plumbing; the blur boundary you configured)
+	# -- they do not change the multislice physics, so applying is safe.
+	hint = (
+		f"abTEM is missing: {missing}.\n"
+		"These are known abtem-1.0.9 gaps this pipeline patches; applying is safe and "
+		"does not change your results (set ABTEM_RUN_APPLY_PATCHES=1 to skip this prompt)."
+	)
 
 	if assume_yes is None:
 		if not sys.stdin.isatty():
 			raise SystemExit(
-				f"env check failed: abTEM lacks compat behavior(s): {missing}.\n"
-				"Re-run with --apply-patches (or ABTEM_RUN_APPLY_PATCHES=1), pass "
-				"--no-patches to run anyway, or use a patched abTEM environment."
+				f"env check failed: {hint}\nRe-run with --apply-patches "
+				"(or ABTEM_RUN_APPLY_PATCHES=1), or --no-patches to run unpatched anyway."
 			)
-		reply = input(
-			f"env check: abTEM lacks compat behavior(s): {missing}.\n"
-			"Apply local compat shims for this run? [y/N] "
-		)
-		assume_yes = reply.strip().lower() in ("y", "yes")
+		if input(f"{hint}\nApply for this run? [y/N] ").strip().lower() not in ("y", "yes"):
+			# fail fast on an interactive decline -- proceeding would only crash later in
+			# the run. (--no-patches is the explicit "run unpatched anyway".)
+			raise SystemExit(
+				"aborting: these shims are needed for this run. Re-run and answer y, pass "
+				"--apply-patches, or --no-patches to run unpatched anyway."
+			)
+		assume_yes = True
 
-	if not assume_yes:
+	if not assume_yes:  # explicit --no-patches
 		log.warning(
-			"running without abTEM compat shims (%s); "
-			"expect failures on those code paths.",
+			"running without abTEM compat shims (%s); expect failures on those code paths.",
 			missing,
 		)
 		return
@@ -227,10 +239,24 @@ def ensure_patched_environment(assume_yes: bool | None = None) -> None:
 	apply_abtem_patches()
 	landed = ", ".join(name for name, ok in _PATCHES_APPLIED.items() if ok)
 	log.info(
-		"applied abTEM compat shims: %s "
-		"(environment lacked them; the durable fix is upstreaming to abTEM).",
+		"applied abTEM compat shims: %s (the durable fix is upstreaming to abTEM).",
 		landed or "none",
 	)
+
+
+def warn_if_unpatched() -> None:
+	"""Diagnostic (no patching) for the orchestration entries. They run unpatched by
+	design -- the deployment image bakes the shims in -- so if the env still lacks them,
+	turn a later cryptic abTEM crash into an actionable hint instead of acting for the user.
+	"""
+	applicable = detect_applicable_patches()
+	if applicable:
+		log.warning(
+			"abTEM is missing %s; this entry runs unpatched (the deployment image bakes "
+			"the shims in). Run it from that image, or apply the shims in your env first "
+			"(a local serial run via run.py / abtem-run does that for you).",
+			"; ".join(_REASONS[name] for name in applicable),
+		)
 
 
 __all__ = [
@@ -238,5 +264,6 @@ __all__ = [
 	"patch_abtem_source",
 	"detect_applicable_patches",
 	"ensure_patched_environment",
+	"warn_if_unpatched",
 	"_PATCHES_APPLIED",
 ]
