@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ._log import configure_default_logging
 from .aggregate import aggregate_job, aggregate_series
+from .compat import ensure_patched_environment
 from .config import load_config
 from .generator_run import generate_run
 from .worker import run_one_seed
@@ -91,6 +92,16 @@ def run_pipeline(
 	return run_dir
 
 
+def _resolve_patch_consent(args) -> bool | None:
+	"""Map the patch flags / env var to ensure_patched_environment's assume_yes:
+	explicit decline, explicit consent, or None (decide at runtime)."""
+	if args.no_patches:
+		return False
+	if args.apply_patches or os.environ.get("ABTEM_RUN_APPLY_PATCHES"):
+		return True
+	return None
+
+
 def main():
 	"""Source-tree entry point used by ``python run.py``."""
 	configure_default_logging()
@@ -100,8 +111,8 @@ def main():
 			"Local serial driver for abtem_run. "
 			"Generates the per-seed work queue from the TOML config, then "
 			"runs all workers serially and aggregates each job. "
-			"For parallel execution, call `python -m abtem_run.worker` / "
-			"`python -m abtem_run.aggregate` directly."
+			"For parallel execution, run `abtem-run-worker` / `abtem-run-aggregate` "
+			"from the deployment image, whose abTEM is patched at build."
 		),
 	)
 	parser.add_argument(
@@ -168,6 +179,20 @@ def main():
 			"(also suppressed by ABTEM_RUN_NO_ESTIMATE=1). No effect on --resume."
 		),
 	)
+	patch_group = parser.add_mutually_exclusive_group()
+	patch_group.add_argument(
+		"--apply-patches",
+		action="store_true",
+		help=(
+			"apply abTEM compat shims without prompting (also via "
+			"ABTEM_RUN_APPLY_PATCHES=1); for headless / CI / pipeline runs."
+		),
+	)
+	patch_group.add_argument(
+		"--no-patches",
+		action="store_true",
+		help="run against the bare abTEM environment; never apply compat shims.",
+	)
 	args = parser.parse_args()
 
 	# Standalone aggregate modes are mutually exclusive with the pipeline
@@ -179,6 +204,10 @@ def main():
 		parser.error("--aggregate / --aggregate-series cannot be combined with --resume or --generate-only")
 	if args.n_phonons is not None and args.aggregate_series is None:
 		parser.error("--n-phonons only applies to --aggregate-series")
+
+	# planning-only (--generate-only) does no multislice/blur, so it needs no shims
+	if not args.generate_only:
+		ensure_patched_environment(assume_yes=_resolve_patch_consent(args))
 
 	if args.aggregate is not None:
 		aggregate_job(args.aggregate, force_new=args.force_new)

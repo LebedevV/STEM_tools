@@ -206,7 +206,6 @@ def generate_run(config_path: Path = Path("config.toml")) -> Path:
 def main():
     """Module entry point for queue generation."""
     import argparse
-    import sys
     from ._log import configure_default_logging
     configure_default_logging()
     parser = argparse.ArgumentParser(
