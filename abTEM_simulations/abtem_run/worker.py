@@ -173,11 +173,11 @@ def run_cbed(cfg, ctx, potential):
 
 def run_one_seed(job_dir, todo_path) -> None:
 	"""Process one .todo file: build lamella, displace per seed, run multislice,
-	write outputs, rename .todo → .done.
+	write outputs, rename .running → .done.
 
 	Args:
 		job_dir: path to the job directory
-		           (``gen_*/<phase>_<hkl>_<tilt>/``).
+		           (``gen_*/<job>/``).
 		todo_path: path to one ``seeds/seed_NNNNNN.todo`` file inside that
 		           job_dir.
 
@@ -190,7 +190,7 @@ def run_one_seed(job_dir, todo_path) -> None:
 		- Renames ``seeds/seed_NNNNNN.running`` → ``seeds/seed_NNNNNN.done``.
 
 	On ordinary exception: the claim is rolled back to ``.todo`` so a retry can
-	pick up the same work. The aggregator will see only completed seeds.
+	pick up the same work. Aggregation refuses jobs with pending or running seeds.
 
 	On SIGTERM / SIGINT: partial seed_NNNNNN_* outputs are removed and the
 	claim is rolled back to ``.todo`` on a best-effort basis.
@@ -230,7 +230,7 @@ def run_one_seed(job_dir, todo_path) -> None:
 				ase.io.write(
 					str(out_dir / f"seed_{seed:06d}_displaced.xyz"),
 					displaced,
-					"xyz",
+					"extxyz",
 				)
 
 			potential = make_potential(displaced).build().compute()
@@ -288,7 +288,7 @@ def main():
 			"outputs to <job_dir>/outputs/, and rename the claim to .done."
 		),
 	)
-	parser.add_argument("job_dir", help="job directory (gen_*/<phase>_<hkl>_<tilt>/)")
+	parser.add_argument("job_dir", help="job directory (gen_*/<job>/)")
 	parser.add_argument("todo_path", help="path to one seeds/seed_NNNNNN.todo file")
 	args = parser.parse_args()
 	run_one_seed(args.job_dir, args.todo_path)

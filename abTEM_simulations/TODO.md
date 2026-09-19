@@ -44,46 +44,6 @@ longer diverge.
 - [x] **Cache `static_potential` to disk.** ✅ landed `ac8844d` — `aggregate._load_or_build_static_potential` saves `job_dir/static_potential.zarr`, cache-hits when it is at least as new as `surf.xyz`, and atomic-publishes via a `.tmp` rename. Lives at `job_dir` (not the aggregate dir) so it survives cleanup and is never matched by the `seed_*` averaging glob.
 - [x] **Safer `outputs/` cleanup.** ✅ archive-on-aggregate landed in `84e0b67` (chunk (c)); `768531c` added the path-edge guards. `aggregate._archive_per_seed_outputs` *moves* every child of `outputs/` into `outputs_archive/` (it never `rmtree`s `outputs/` itself — only `rmdir`s the emptied dir) and refuses unless `out_dir` is a non-symlink real directory named exactly `outputs` sibling to `outputs_archive`; the worker's `_cleanup_seed_outputs` guards `is_dir`/symlink on the SIGTERM/SIGINT path too. Residual: no `seed_*`-only filter, so a stray non-seed file in `outputs/` is moved into the archive too (preserved, not deleted) — which is why the original "rmtree blows away arbitrary paths" risk can't occur.
 
-## Dockerfile / spot-deployment review (2026-06-10)
-
-Findings from a critical read of `Dockerfile` during the first real GPU
-validation (RTX A4500 host; the GPU test pack §1–§4 all passed, so the
-runtime semantics the image wraps are proven). The image *design* is sound —
-`runtime` base (includes cuFFT, needed for `fft='cufft'`), selective COPY,
-no-ENTRYPOINT one-shot containers, `.todo`-retry + SIGTERM partial-cleanup
-spot story. These are the gaps, priority-ordered.
-
-Scope note: there is no actual AWS infra in the repo (no ECS/Batch defs, S3
-sync, or spot-interruption watcher). "AWS setup" = this generic spot-friendly
-image; fleet, queue, work assignment (push model — the orchestrator must not
-double-assign a `.todo`), driver/AMI choice, and result sync are all on the
-operator. The header should say so explicitly.
-
-### High — fails in real use
-
-- [ ] **`abtem-run-generate` doesn't exist.** Referenced in the header's generator example and the CMD comment (and in `cli.py:11`'s docstring), but `[project.scripts]` defines no such entry. The fallback `python -m abtem_run.generator_run` takes *no arguments* (hardcodes `./config.toml`), so the documented `/job/config.toml` arg has no working target at all. Fix the examples to `abtem-run --generate-only --config /job/config.toml`, or add the console script (+ argparse in `generator_run.__main__`).
-- [ ] **`tifffile` missing from the image.** abtem 1.0.9 declares it *optional* (lazy import in `array.py`, RuntimeError at `to_tiff`), and neither abtem-run's pyproject nor the Dockerfile installs it. The worker writes `seed_*_potproj.tif` unconditionally and *before* the zarr, so the first seed dies at output-write **after** paying for the multislice — worst case on spot billing. Masked on dev hosts where tifffile happens to be present. Right fix: add `tifffile` to `pyproject.toml` `dependencies` (hard runtime dep of worker + aggregator), which fixes the image for free.
-- [ ] **No build-time patch gate.** The image exists to pin abtem for the three source-substring patches, yet nothing verifies they bind. Add after the install (imports fine without a GPU — patching only rewrites source):
-  `RUN python3.11 -c "import abtem_run,sys; sys.exit(0 if all(abtem_run._PATCHES_APPLIED.values()) else 1)"`
-  And pin `abtem==1.0.9` exactly — `~=1.0.9` permits a 1.0.10 where patches silently no-op and the failure surfaces as a runtime cupy crash on a spot node.
-
-### Medium
-
-- [ ] **Jammy's `python3.11` is the `3.11.0~rc1` universe build** — the image pins a release-candidate interpreter. `nvidia/cuda:13.0.0-runtime-ubuntu24.04` exists (tag verified on Docker Hub 2026-06-10) with a proper 3.12 default, allowed by `requires-python >=3.11`; caveat: 24.04 enforces PEP 668 → venv or `--break-system-packages`. Either way add a `python3.11 --version` / interpreter sanity check at build.
-- [ ] **CUDA 13 needs an r580+ host driver** — many AWS GPU AMIs still ship r570-era drivers for CUDA 12. Document the driver floor next to the `--gpus all` example, or parameterize the file (`ARG BASE_TAG` + `ARG GPU_EXTRA`) so a `gpu-cu12` variant builds from the same Dockerfile (pyproject extras already exist).
-- [ ] **Runs as root** → outputs on the mounted `/job` tree come back root-owned, breaking host-side follow-ups (extend, aggregate, rsync). Worker only writes inside the job tree, so documenting `--user "$(id -u):$(id -g)"` in the run examples suffices.
-- [ ] **PID-1 signal gap.** Python is PID 1; outside the `_install_preemption_handler` window (config/lamella load; the post-`restore_handlers()`-pre-rename gap) SIGTERM has default disposition and PID 1 *ignores* it → container hangs to the grace-period SIGKILL. Consequence is mild (a completed-but-unrenamed seed recomputes), but `--init` in the run examples fixes the semantics outright.
-- [ ] **Layer-cache inversion:** source is COPY'd before `pip install`, so any code edit re-resolves the whole cupy/scipy/abtem stack. Split: pinned third-party deps as their own layer, then COPY source + `pip install --no-deps .`. Also trims ECR push churn / spot cold-pull deltas.
-
-### Minor
-
-- [ ] WORKDIR comment says "/work is the mount point" while every example mounts `/job` (harmless — abs paths — but confusing)
-- [ ] `python3.11-venv` installed, never used
-- [ ] no `.dockerignore` — context ships `.git` + the unrelated tool dirs
-- [ ] `DEBIAN_FRONTEND` as persistent ENV instead of per-RUN
-- [ ] no OCI source/revision labels (provenance in ECR)
-- [ ] `PIP_NO_CACHE_DIR=1` + `--no-cache-dir` redundant
-
 ## Diffraction/CBED finite-box fringes (2026-06-10)
 
 Surfaced during the first GPU validation (a domain reviewer flagged the

@@ -13,13 +13,11 @@ worker pipeline (generate -> per-seed worker -> aggregator) supersedes this
 end-to-end, with the aggregator now emitting the equivalent PNG previews
 (``potential_projection.png``, ``diff.png``, ``cbed.png``).
 
-This file is not part of the installable package — it lives in ``legacy/``
-alongside ``abtem_run_v01.py`` as a reference / fallback. Importing it
-requires ``abtem-run`` to be installed (it pulls shared helpers — RunContext,
-make_potential, add_probe, etc. — from ``abtem_run.pipeline`` / ``.simulation``).
+This file is retained in ``legacy/`` as a reference. It imports shared helpers
+from the neighboring ``abtem_run`` directory.
 
-CLI:
-    python legacy/in_process.py     # reads ./config.toml, runs simulation_run
+CLI (from the abTEM_simulations directory):
+    python -m legacy.in_process     # reads ./config.toml, runs simulation_run
 
 Library:
     from legacy.in_process import simulation_run

@@ -13,6 +13,19 @@ SEED_WIDTH = 6
 SEED_STATES = {"todo", "running", "done"}
 
 
+def require_finished_seeds(job_dir) -> None:
+	"""Refuse to read or archive a job while seeds are pending or running."""
+	seeds_dir = Path(job_dir) / "seeds"
+	if not seeds_dir.exists():
+		return  # Older output-only jobs have no queue.
+	remaining = [p for p in seeds_dir.iterdir() if p.suffix in (".todo", ".running")]
+	if remaining:
+		raise RuntimeError(
+			f"Job incomplete: {len(remaining)} pending or running seed(s) in {seeds_dir}. "
+			"Wait for all workers to finish before reading or archiving outputs."
+		)
+
+
 def load_job_config(job_dir) -> tuple[Path, AppConfig]:
 	"""Load the single job-local TOML from ``job_dir``.
 

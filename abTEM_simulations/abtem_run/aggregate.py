@@ -24,7 +24,10 @@ import matplotlib.pyplot as plt
 
 from ._log import configure_default_logging
 from .compat import warn_if_unpatched
-from .job_io import collect_seed_zarrs, contributing_seeds, load_job_config
+from .job_io import (
+	collect_seed_zarrs, contributing_seeds,
+	load_job_config, require_finished_seeds,
+)
 from .pipeline import make_potential, resolve_context
 from .simulation import add_probe, load_ground_state_atoms
 
@@ -67,18 +70,6 @@ def version_dir_for(job_dir, cfg=None, *, force_new: bool = False) -> Path:
 	return vdir
 
 
-def _write_seed_provenance(target_dir: Path, seeds: list[int], counts: dict[str, int]) -> None:
-	"""Write ``<target_dir>/seed_counts.json`` = {"seeds": [...], "channels":
-	{channel: n}}. ``seeds`` is the atoms-level record of which frozen-phonon
-	snapshots fed this aggregate (one seed feeds all channels); a per-channel
-	count below len(seeds) flags a channel missing some snapshots."""
-	if not counts:
-		return
-	payload = {"seeds": seeds, "channels": counts}
-	(target_dir / "seed_counts.json").write_text(json.dumps(payload, indent=2) + "\n")
-	log.info("aggregate: seeds=%d, per-channel %s", len(seeds), counts)
-
-
 def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
 	"""Move outputs/ contents into outputs_archive/ and remove outputs/.
 
@@ -100,6 +91,7 @@ def _archive_per_seed_outputs(out_dir: Path, archive_dir: Path) -> None:
 			f"refuse to archive: {out_dir} must be a real 'outputs' "
 			f"directory sibling of '{archive_dir.name}'"
 		)
+	require_finished_seeds(out_dir.parent)
 	archive_dir.mkdir(parents=True, exist_ok=True)
 	for child in out_dir.iterdir():
 		dest = archive_dir / child.name
@@ -237,20 +229,14 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 			f"No outputs/ or outputs_archive/ directory in {job_dir}"
 		)
 
-	seeds_dir = job_dir / "seeds"
-	if seeds_dir.exists():
-		remaining = list(seeds_dir.glob("*.todo"))
-		if remaining:
-			raise RuntimeError(
-				f"Job incomplete: {len(remaining)} .todo file(s) remain in {seeds_dir}. "
-				"Run all workers before aggregating."
-			)
+	require_finished_seeds(job_dir)
 
 	_, cfg = load_job_config(job_dir)
 	_runtime = resolve_context(cfg)  # configure abTEM and keep any Dask client alive
 	phase = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith(".cif") else cfg.job.phase
-	hkl = "".join(str(x) for x in cfg.job.hkl_list[0])
-	preview_prefix = f"{cfg.paths.sample_name}, {phase} [{hkl}]"
+	indices = " ".join(str(x) for x in cfg.job.hkl_list[0])
+	direction = f"uvw [{indices}]" if cfg.job.is_uvw else f"hkl ({indices})"
+	preview_prefix = f"{cfg.paths.sample_name}, {phase}, {direction}"
 
 	vdir = version_dir_for(job_dir, cfg, force_new=force_new)
 	scans_dir = vdir / "scans"
@@ -279,7 +265,12 @@ def aggregate_job(job_dir, *, force_new: bool = False) -> None:
 
 	# 4. Seed provenance -> <vdir>/seed_counts.json (atoms-level seeds + counts).
 	seeds = contributing_seeds(out_dir, archive_dir, list(seed_counts))
-	_write_seed_provenance(vdir, seeds, seed_counts)
+	# The seed union and per-channel counts reveal missing channel snapshots.
+	if seed_counts:
+		payload = {"seeds": seeds, "channels": seed_counts}
+		(vdir / "seed_counts.json").write_text(
+			json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+		log.info("aggregate: seeds=%d, per-channel %s", len(seeds), seed_counts)
 
 	proj_dir.mkdir(exist_ok=True)
 	mean_proj, _ = _mean_zarr_channel(out_dir, archive_dir, "potproj")
@@ -314,20 +305,14 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 	if not out_dir.exists() and not archive_dir.exists():
 		raise FileNotFoundError(f"No outputs/ or outputs_archive/ directory in {job_dir}")
 
-	seeds_dir = job_dir / "seeds"
-	if seeds_dir.exists():
-		remaining = list(seeds_dir.glob("*.todo"))
-		if remaining:
-			raise RuntimeError(
-				f"Job incomplete: {len(remaining)} .todo file(s) remain in {seeds_dir}. "
-				"Run all workers before aggregating."
-			)
+	require_finished_seeds(job_dir)
 
 	_, cfg = load_job_config(job_dir)
 	_runtime = resolve_context(cfg)  # configure abTEM and keep any Dask client alive
 	phase = cfg.job.phase[:-4] if cfg.job.phase.lower().endswith(".cif") else cfg.job.phase
-	hkl = "".join(str(x) for x in cfg.job.hkl_list[0])
-	preview_prefix = f"{cfg.paths.sample_name}, {phase} [{hkl}]"
+	indices = " ".join(str(x) for x in cfg.job.hkl_list[0])
+	direction = f"uvw [{indices}]" if cfg.job.is_uvw else f"hkl ({indices})"
+	preview_prefix = f"{cfg.paths.sample_name}, {phase}, {direction}"
 	vdir = version_dir_for(job_dir, cfg, force_new=force_new)
 	proj_dir = vdir / "projections"
 
@@ -412,7 +397,12 @@ def aggregate_series(job_dir, *, n_phonons: int | None = None, force_new: bool =
 				)
 		k_dir.mkdir(parents=True, exist_ok=True)
 		seeds = contributing_seeds(out_dir, archive_dir, list(seed_counts), max_seeds=k)
-		_write_seed_provenance(k_dir, seeds, seed_counts)
+		# The seed union and per-channel counts reveal missing channel snapshots.
+		if seed_counts:
+			payload = {"seeds": seeds, "channels": seed_counts}
+			(k_dir / "seed_counts.json").write_text(
+				json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+			log.info("aggregate: seeds=%d, per-channel %s", len(seeds), seed_counts)
 
 	return n_max
 
@@ -424,9 +414,10 @@ def main():
 	parser = argparse.ArgumentParser(
 		description="Aggregate one abtem_run job directory."
 	)
-	parser.add_argument("job_dir", help="job directory (gen_*/<phase>_<hkl>_<tilt>/)")
+	parser.add_argument("job_dir", help="job directory inside gen_*/")
+	parser.add_argument("--force-new", action="store_true", help="create a new aggregate version")
 	args = parser.parse_args()
-	aggregate_job(args.job_dir)
+	aggregate_job(args.job_dir, force_new=args.force_new)
 	return 0
 
 

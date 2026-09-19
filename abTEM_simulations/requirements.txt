@@ -1,0 +1,16 @@
+# Python 3.11 or newer. Dependencies only; these scripts are run from source.
+numpy
+scipy
+matplotlib
+dask
+abtem==1.0.9
+ase
+diffpy.structure
+pydantic>=2
+tomli-w
+tifffile
+zarr
+
+# GPU: add CuPy for your CUDA version.
+# Optional distributed GPU execution also needs dask-cuda; RMM is optional.
+# Use the same Zarr major version on machines sharing simulation outputs.

@@ -3,32 +3,45 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-"""abTEM compatibility shims and the policy for applying them.
+"""Compatibility fixes for the pinned abTEM 1.0.9 dependency.
 
-These shims exist only because the pinned abTEM build lacks two behaviors this
-package needs. They are a stopgap, not an architecture:
+Why these fixes exist:
 
-  1. _partition_args_meta — CuPy/Dask-safe partition metadata (GPU runs).
-  2. _gaussian_filter_boundary_modes — a wider gaussian_filter boundary
-     allow-list (e.g. 'nearest') for blurred outputs.
+1. ArrayObject._partition_args creates Dask metadata with xp.array((), object).
+   On the GPU, xp is CuPy, which does not support object-dtype arrays. This is
+   partition metadata, not the simulated wave or potential, so a NumPy object
+   array supplies the metadata without moving the numerical calculation to CPU.
 
-Policy:
-  * A missing behavior is an ENVIRONMENT problem; the durable fix is upstreaming
-    to abTEM (or pinning a build that has it), not patching around it.
-  * Never apply the shims as an import side-effect, and never scatter patch calls
-    across entry points. Importing this module changes nothing.
-  * The user CLI (cli.main) applies them once, explicitly, behind a consent gate
-    (ensure_patched_environment): detect what's missing, say why, and apply only
-    on [y/N] / --apply-patches / ABTEM_RUN_APPLY_PATCHES.
-  * Direct module / worker entries run UNPATCHED by design — the parallel/AWS
-    path runs in a properly-patched abTEM environment (e.g. a Docker image).
+2. _BaseMeasurement2D.gaussian_filter accepts only reflect/constant in its
+   non-periodic boundary branch. Our finite-source blur also uses nearest/wrap.
+   The underlying filtering backend supports these modes, but abTEM rejects them
+   before the filter runs. We extend that allow-list and retain the separate
+   periodic branch. Boundary choice affects image edges; the fix enables the
+   requested choice rather than changing the multislice calculation.
 
-Applied status is recorded in _PATCHES_APPLIED for diagnostics.
+These are targeted source substitutions, not general fixes for arbitrary abTEM
+versions. An absent target can mean either an existing fix or changed upstream
+code; persistent patching checks for the replacement before treating it as fixed.
+Revisit these workarounds when changing abTEM versions and remove them once the
+upstream functions provide the required behavior.
+
+Two application methods are retained:
+
+* python -m abtem_run.compat asks before patch_abtem_source() rewrites the installed
+  third-party abTEM files. Run it once per Python environment so separately started
+  workers and aggregators inherit the fixes. Reinstalling abTEM can erase them.
+  Start a new Python process afterwards; already-imported functions do not change.
+* apply_abtem_patches() changes functions in memory for this process only. The
+  local run.py driver offers this option when persistent fixes are absent.
+
+Importing this module never patches anything. These scripts themselves do not
+need installation. _PATCHES_APPLIED records only the in-memory patch status.
 """
 import importlib
 import inspect
 import logging
 import os
+from pathlib import Path
 import sys
 import textwrap
 import warnings
@@ -142,7 +155,7 @@ def apply_abtem_patches() -> dict[str, bool]:
 	"""Apply the abTEM compatibility shims once and return their status.
 
 	Prefer ``ensure_patched_environment`` at the CLI; call this directly only when
-	the decision to patch is already made (e.g. a Docker/AWS entrypoint).
+	the caller has already chosen to apply the fixes.
 	"""
 	global _PATCHES_ATTEMPTED
 	if _PATCHES_ATTEMPTED:
@@ -154,43 +167,42 @@ def apply_abtem_patches() -> dict[str, bool]:
 
 
 def patch_abtem_source() -> dict[str, bool]:
-	"""Bake the shims into abTEM's installed source files, for a Docker/AWS image.
+	"""Persist the fixes in installed abTEM source for future Python processes.
 
-	Unlike ``apply_abtem_patches`` (in-memory, per-process), this rewrites abTEM's
-	``.py`` files on disk so every process in the image gets a correct abTEM with
-	no runtime shimming. Build-time only — not the local/dev path. Reuses the same
-	``_PATCH_SPECS``. Returns per-shim status; ``False`` when the target is absent
-	(already-correct or drifted abTEM).
+	The caller chooses whether to modify the environment; the module CLI asks first.
+	Check every target before writing. Already-patched functions are accepted, while
+	unknown source is rejected so an abTEM version change cannot silently skip a fix.
+	Each file is published with an atomic rename, preserving its permission bits.
 	"""
-	from pathlib import Path
-
-	results: dict[str, bool] = {}
+	results = {}
+	edits = []
 	for spec in _PATCH_SPECS:
+		module = importlib.import_module(spec["module"])
+		fn = getattr(getattr(module, spec["owner"]), spec["attr"])
+		filename = inspect.getsourcefile(fn)
+		lines, start = inspect.getsourcelines(fn)
+		source = textwrap.dedent("".join(lines))
+		if spec["replacement"] in source:
+			results[spec["name"]] = True
+			continue
+		if filename is None or spec["target"] not in source:
+			raise RuntimeError(f"Unrecognized abTEM source for {spec['name']}; no files changed.")
+		path = Path(filename)
+		indent = lines[0][:len(lines[0]) - len(lines[0].lstrip())]
+		patched = textwrap.indent(source.replace(spec["target"], spec["replacement"]), indent)
+		file_lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+		file_lines[start - 1:start - 1 + len(lines)] = [patched]
+		edits.append((spec["name"], path, "".join(file_lines)))
+
+	for name, path, source in edits:
+		tmp = path.with_suffix(path.suffix + ".tmp")
 		try:
-			module = importlib.import_module(spec["module"])
-			fn = getattr(getattr(module, spec["owner"]), spec["attr"])
-			path = inspect.getsourcefile(fn)
-			lines, start = inspect.getsourcelines(fn)
-		except (ImportError, AttributeError, TypeError, OSError):
-			results[spec["name"]] = False
-			continue
-
-		dedented = textwrap.dedent("".join(lines))
-		if path is None or spec["target"] not in dedented:
-			results[spec["name"]] = False
-			continue
-
-		base = lines[0][: len(lines[0]) - len(lines[0].lstrip())]
-		patched_block = textwrap.indent(
-			dedented.replace(spec["target"], spec["replacement"]), base
-		)
-		file_lines = Path(path).read_text().splitlines(keepends=True)
-		file_lines[start - 1 : start - 1 + len(lines)] = [patched_block]
-		# atomic: a failed write must not leave abTEM's installed source half-written
-		tmp = Path(f"{path}.tmp")
-		tmp.write_text("".join(file_lines))
-		os.replace(tmp, path)
-		results[spec["name"]] = True
+			tmp.write_text(source, encoding="utf-8")
+			tmp.chmod(path.stat().st_mode)
+			os.replace(tmp, path)
+		finally:
+			tmp.unlink(missing_ok=True)
+		results[name] = True
 	return results
 
 
@@ -206,12 +218,11 @@ def ensure_patched_environment(assume_yes: bool | None = None) -> None:
 	if not applicable:
 		return
 	missing = "; ".join(_REASONS[name] for name in applicable)
-	# These shims only enable code paths (GPU plumbing; the blur boundary you configured)
-	# -- they do not change the multislice physics, so applying is safe.
+	# These changes handle partition metadata and enable the requested blur boundary mode.
 	hint = (
 		f"abTEM is missing: {missing}.\n"
-		"These are known abtem-1.0.9 gaps this pipeline patches; applying is safe and "
-		"does not change your results (set ABTEM_RUN_APPLY_PATCHES=1 to skip this prompt)."
+		"These fixes handle GPU partition metadata and blur boundary modes. "
+		"They apply only to this process (ABTEM_RUN_APPLY_PATCHES=1 skips this prompt)."
 	)
 
 	if assume_yes is None:
@@ -245,16 +256,13 @@ def ensure_patched_environment(assume_yes: bool | None = None) -> None:
 
 
 def warn_if_unpatched() -> None:
-	"""Diagnostic (no patching) for the orchestration entries. They run unpatched by
-	design -- the deployment image bakes the shims in -- so if the env still lacks them,
-	turn a later cryptic abTEM crash into an actionable hint instead of acting for the user.
-	"""
+	"""Warn when a direct module call needs compatibility fixes."""
 	applicable = detect_applicable_patches()
 	if applicable:
 		log.warning(
-			"abTEM is missing %s; this entry runs unpatched (the deployment image bakes "
-			"the shims in). Run it from that image, or apply the shims in your env first "
-			"(a local serial run via run.py / abtem-run does that for you).",
+			"abTEM is missing %s. Run python -m abtem_run.compat once in this environment, "
+			"then restart the worker or aggregator. Alternatively, python run.py offers "
+			"in-memory fixes for its own process.",
 			"; ".join(_REASONS[name] for name in applicable),
 		)
 
@@ -267,3 +275,27 @@ __all__ = [
 	"warn_if_unpatched",
 	"_PATCHES_APPLIED",
 ]
+
+
+if __name__ == "__main__":
+	import argparse
+
+	parser = argparse.ArgumentParser(description=__doc__,
+		formatter_class=argparse.RawDescriptionHelpFormatter)
+	parser.add_argument("--yes", action="store_true", help="apply source fixes without prompting")
+	args = parser.parse_args()
+	print("This modifies the installed third-party abTEM source in this Python environment:")
+	for spec in _PATCH_SPECS:
+		print(f"  {spec['module']}.{spec['owner']}.{spec['attr']}: {spec['reason']}")
+	if not args.yes:
+		if not sys.stdin.isatty():
+			parser.error("Use --yes to explicitly approve source changes in a non-interactive run.")
+		if input("Apply these persistent fixes? [y/N] ").strip().lower() not in ("y", "yes"):
+			raise SystemExit("No changes made.")
+	try:
+		status = patch_abtem_source()
+	except (ImportError, AttributeError, TypeError, OSError, RuntimeError) as error:
+		raise SystemExit(f"Could not finish patching abTEM: {error}. Correct the issue and rerun.")
+	for name in status:
+		print(f"  {name}: fixed or already present")
+	print("Start a new Python process for simulations. Recheck after reinstalling or upgrading abTEM.")
