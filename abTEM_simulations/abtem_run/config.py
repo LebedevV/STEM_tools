@@ -185,10 +185,10 @@ class Simulations(BaseModel):
 	frozen_phonons: int | str | list[int | str] = Field() #str meant to be only 'None'
 	fph_sigma: float | bool | str | list[float | bool | str] = Field() #bool meant to be converted to None
 	do_full_run: bool = Field()  # run the per-seed scan (probe.scan)
-	# test_enabled=true: aggregator keeps outputs/ intact instead of deleting
+	# test_enabled=true: aggregator keeps outputs/ intact instead of archiving
 	# it, AND the worker writes outputs/seed_NNNNNN_displaced.xyz per seed.
 	test_enabled: bool = Field(default=False)
-	# emit_static_baseline=true: also write aggregate/potential_projection_static.*
+	# emit_static_baseline=true: also write aggregate/<version>/projections/potential_projection_static.*
 	# alongside the phonon-averaged projection.
 	emit_static_baseline: bool = Field(default=False)
 	# Boundary mode for the gaussian-blur TIFF variants. Threaded into

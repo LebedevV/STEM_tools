@@ -16,6 +16,7 @@ from .aggregate import aggregate_job, aggregate_series
 from .compat import ensure_patched_environment
 from .config import load_config
 from .generator_run import generate_run
+from .job_io import require_finished_seeds
 from .worker import run_one_seed
 
 
@@ -67,7 +68,7 @@ def run_pipeline(
 			)
 		log.info(f"abtem_run: resuming {run_dir}")
 
-	job_dirs = sorted(p for p in run_dir.iterdir() if p.is_dir())
+	job_dirs = sorted(p for p in run_dir.iterdir() if p.is_dir() and (p / "seeds").is_dir())
 	log.info(f"abtem_run: {len(job_dirs)} job(s) to process")
 
 	for job_dir in job_dirs:
@@ -77,8 +78,8 @@ def run_pipeline(
 			for todo in todos:
 				log.info(f"abtem_run: [{job_dir.name}]   {todo.name}")
 				run_one_seed(job_dir, todo)
-		else:
-			log.info(f"abtem_run: [{job_dir.name}] all seeds done")
+		require_finished_seeds(job_dir)
+		log.info(f"abtem_run: [{job_dir.name}] all seeds done")
 
 		# If outputs/ is gone, a previous aggregator already archived it —
 		# nothing fresh to re-aggregate (use --aggregate to force a rebuild).
@@ -92,16 +93,6 @@ def run_pipeline(
 	return run_dir
 
 
-def _resolve_patch_consent(args) -> bool | None:
-	"""Map the patch flags / env var to ensure_patched_environment's assume_yes:
-	explicit decline, explicit consent, or None (decide at runtime)."""
-	if args.no_patches:
-		return False
-	if args.apply_patches or os.environ.get("ABTEM_RUN_APPLY_PATCHES"):
-		return True
-	return None
-
-
 def main():
 	"""Source-tree entry point used by ``python run.py``."""
 	configure_default_logging()
@@ -111,8 +102,8 @@ def main():
 			"Local serial driver for abtem_run. "
 			"Generates the per-seed work queue from the TOML config, then "
 			"runs all workers serially and aggregates each job. "
-			"For parallel execution, run `abtem-run-worker` / `abtem-run-aggregate` "
-			"from the deployment image, whose abTEM is patched at build."
+			"Use --generate-only to inspect structures before simulating, "
+			"and --resume to continue an existing run."
 		),
 	)
 	parser.add_argument(
@@ -207,7 +198,12 @@ def main():
 
 	# planning-only (--generate-only) does no multislice/blur, so it needs no shims
 	if not args.generate_only:
-		ensure_patched_environment(assume_yes=_resolve_patch_consent(args))
+		assume_yes = None
+		if args.no_patches:
+			assume_yes = False
+		elif args.apply_patches or os.environ.get("ABTEM_RUN_APPLY_PATCHES"):
+			assume_yes = True
+		ensure_patched_environment(assume_yes=assume_yes)
 
 	if args.aggregate is not None:
 		aggregate_job(args.aggregate, force_new=args.force_new)

@@ -121,7 +121,7 @@ def format_run_cost(cost: RunCost) -> str:
 	"""Multi-line human-readable RunCost block."""
 	lines = []
 	lines.append("=" * 64)
-	lines.append("abtem-run: pre-flight cost estimate")
+	lines.append("abtem_run: pre-flight cost estimate")
 	lines.append("-" * 64)
 	lines.append(f"  jobs (phase × hkl × tilt × sweep-axes): {cost.n_jobs}")
 	lines.append(f"  total seeds across all jobs:            {cost.total_seeds}")

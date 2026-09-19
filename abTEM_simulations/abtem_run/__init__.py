@@ -3,10 +3,6 @@
 __author__ = "Vasily A. Lebedev"
 __license__ = "GPL-v3"
 
-"""abtem_run package marker.
-
-Runtime code is imported through explicit modules. abTEM compatibility patches
-are applied by `run.py` before heavy modules are imported.
-"""
+"""Local STEM/TEM simulation tools built on abTEM and ASE."""
 
 __all__: list[str] = []

@@ -16,7 +16,7 @@ from pathlib import Path
 import abtem
 
 from ._log import configure_default_logging
-from .job_io import collect_seed_zarrs
+from .job_io import collect_seed_zarrs, require_finished_seeds
 
 
 # --------------------------------------------------------------------------- #
@@ -62,7 +62,7 @@ def load_ensemble(job_dir, channel: str):
 	returned ensemble has a deterministic order across calls.
 
 	Args:
-		job_dir: path to the job directory (``gen_*/<phase>_<hkl>_<tilt>/``).
+		job_dir: path to the job directory (``gen_*/<job>/``).
 		channel: channel name (e.g. ``"haadf"``, ``"abf"``, ``"diff"``,
 		         ``"cbed"``).
 
@@ -78,6 +78,7 @@ def load_ensemble(job_dir, channel: str):
 		to ``<vdir>/scans/<channel>.zarr``.
 	"""
 	job_dir = Path(job_dir).resolve()
+	require_finished_seeds(job_dir)
 	out_dir = job_dir / "outputs"
 	archive_dir = job_dir / "outputs_archive"
 
@@ -136,6 +137,7 @@ def to_ensemble_files(
 		    have per-seed zarrs in this job dir.
 	"""
 	job_dir = Path(job_dir).resolve()
+	require_finished_seeds(job_dir)
 	if not job_dir.is_dir():
 		raise FileNotFoundError(f"job_dir does not exist: {job_dir}")
 
@@ -186,7 +188,7 @@ def main():
 	)
 	parser.add_argument(
 		"job_dir",
-		help="job directory (gen_*/<phase>_<hkl>_<tilt>/)",
+		help="job directory (gen_*/<job>/)",
 	)
 	parser.add_argument(
 		"--channel",

@@ -111,7 +111,7 @@ def main():
 	)
 	parser.add_argument(
 		"job_dir",
-		help="job directory (gen_*/<phase>_<hkl>_<tilt>/)",
+		help="job directory (gen_*/<job>/)",
 	)
 	group = parser.add_mutually_exclusive_group(required=True)
 	group.add_argument(
